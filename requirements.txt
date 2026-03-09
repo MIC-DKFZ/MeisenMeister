@@ -4,3 +4,4 @@ torch
 torchvision
 numpy
 blosc2
+nibabel
