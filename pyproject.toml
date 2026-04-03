@@ -11,6 +11,7 @@ requires-python = ">=3.12"
 license = { file = "LICENSE" }
 dependencies = [
     "breastdivider",
+    "tqdm",
 ]
 
 [project.scripts]

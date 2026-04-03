@@ -1,5 +1,9 @@
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from statistics import median
+
+from tqdm import tqdm
 
 REQUIRED_DATASET_JSON_KEYS = (
     "channel_names",
@@ -160,3 +164,89 @@ def verify_roi_masks_present(
             "ROI masks are incomplete or inconsistent in "
             f"{masks_tr_dir}: {'; '.join(invalid_cases)}"
         )
+
+
+def _read_mask_geometry_for_label(mask_path: Path, roi_label: int):
+    import numpy as np
+    import SimpleITK as sitk
+
+    mask = sitk.ReadImage(str(mask_path))
+    mask_array = sitk.GetArrayViewFromImage(mask)
+    roi_voxels = np.argwhere(mask_array == roi_label)
+    if roi_voxels.size == 0:
+        raise ValueError(f"ROI label {roi_label} not present in {mask_path.name}")
+
+    min_corner = roi_voxels.min(axis=0)
+    max_corner = roi_voxels.max(axis=0)
+    crop_shape = (max_corner - min_corner + 1).astype(int).tolist()
+    full_shape = [int(i) for i in mask_array.shape]
+    spacing = [float(i) for i in mask.GetSpacing()[::-1]]
+    return spacing, full_shape, crop_shape
+
+
+def extract_roi_fingerprint_from_masks(
+    dataset_dir: Path,
+    dataset_json: dict,
+    case_files: dict[str, list[Path]],
+    num_workers: int = 4,
+) -> dict:
+    verify_roi_masks_present(dataset_dir, dataset_json, case_files)
+
+    file_ending = dataset_json["file_ending"]
+    roi_labels = {"left": 1, "right": 2}
+    spacings: list[list[float]] = []
+    shapes_after_crop: list[list[int]] = []
+    full_shapes: list[list[int]] = []
+
+    if num_workers < 1:
+        raise ValueError(f"num_workers must be at least 1, got {num_workers}")
+
+    def _process_case(case_id: str):
+        mask_path = dataset_dir / "masksTr" / f"{case_id}{file_ending}"
+        case_spacings: list[list[float]] = []
+        case_full_shapes: list[list[int]] = []
+        case_shapes_after_crop: list[list[int]] = []
+        for roi_label in (1, 2):
+            spacing, full_shape, crop_shape = _read_mask_geometry_for_label(
+                mask_path, roi_label
+            )
+            case_spacings.append(spacing)
+            case_full_shapes.append(full_shape)
+            case_shapes_after_crop.append(crop_shape)
+        return case_id, case_spacings, case_full_shapes, case_shapes_after_crop
+
+    sorted_case_ids = sorted(case_files)
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        futures = {
+            executor.submit(_process_case, case_id): case_id
+            for case_id in sorted_case_ids
+        }
+        for future in tqdm(
+            as_completed(futures),
+            total=len(futures),
+            desc="Extracting ROI fingerprint",
+        ):
+            _, case_spacings, case_full_shapes, case_shapes_after_crop = future.result()
+            spacings.extend(case_spacings)
+            full_shapes.extend(case_full_shapes)
+            shapes_after_crop.extend(case_shapes_after_crop)
+
+    median_spacing = [
+        float(median(axis_values)) for axis_values in zip(*spacings, strict=True)
+    ]
+    median_shape_after_crop = [
+        int(round(median(axis_values)))
+        for axis_values in zip(*shapes_after_crop, strict=True)
+    ]
+
+    return {
+        "num_cases": len(case_files),
+        "num_rois": len(shapes_after_crop),
+        "foreground_labels": roi_labels,
+        "spacings": spacings,
+        "shapes_after_crop": shapes_after_crop,
+        "full_shapes": full_shapes,
+        "median_spacing": median_spacing,
+        "median_shape_after_crop": median_shape_after_crop,
+        "normalization": "per_case_zscore",
+    }

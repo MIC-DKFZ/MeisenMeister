@@ -19,8 +19,14 @@ def mm_extract_dataset_fingerprint() -> None:
         required=True,
         help="Integer dataset identifier.",
     )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=4,
+        help="Number of worker threads for ROI fingerprint extraction.",
+    )
     args = parser.parse_args()
-    extract_dataset_fingerprint(args.d)
+    extract_dataset_fingerprint(args.d, num_workers=args.num_workers)
 
 
 def mm_create_breast_segmentations() -> None:
