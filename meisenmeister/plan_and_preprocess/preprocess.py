@@ -1,4 +1,5 @@
 import json
+import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -211,6 +212,9 @@ def preprocess(d: int, num_workers: int = 4) -> Path:
     masks_tr_dir = dataset_dir / "masksTr"
     output_dir = preprocessed_dataset_dir / plans["output_folder_name"]
     output_dir.mkdir(parents=True, exist_ok=True)
+    labels_tr_path = dataset_dir / "labelsTr.json"
+    if labels_tr_path.is_file():
+        shutil.copy2(labels_tr_path, preprocessed_dataset_dir / "labelsTr.json")
 
     target_spacing = [float(i) for i in plans["target_spacing"]]
     target_shape = [int(i) for i in plans["target_shape"]]
