@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from breastdivider import BreastDividerPredictor
+
 from meisenmeister.utils import (
     find_dataset_dir,
     load_dataset_json,
@@ -9,8 +11,6 @@ from meisenmeister.utils import (
 
 
 def get_breast_segmentation_predictor():
-    from breastdivider import BreastDividerPredictor
-
     return BreastDividerPredictor(device="cuda")
 
 

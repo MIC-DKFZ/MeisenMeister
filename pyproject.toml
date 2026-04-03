@@ -10,13 +10,20 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { file = "LICENSE" }
 dependencies = [
+    "blosc2",
     "breastdivider",
+    "numpy",
+    "SimpleITK",
     "tqdm",
 ]
 
 [project.scripts]
 mm_extract_dataset_fingerprint = "meisenmeister.cli:mm_extract_dataset_fingerprint"
 mm_create_breast_segmentations = "meisenmeister.cli:mm_create_breast_segmentations"
+mm_homogenize = "meisenmeister.cli:mm_homogenize"
+mm_plan_experment = "meisenmeister.cli:mm_plan_experment"
+mm_preprocess = "meisenmeister.cli:mm_preprocess"
+mm_plan_and_preprocess = "meisenmeister.cli:mm_plan_and_preprocess"
 
 [tool.setuptools]
 include-package-data = true
