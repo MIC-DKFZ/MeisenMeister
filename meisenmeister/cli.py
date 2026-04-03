@@ -10,6 +10,7 @@ from meisenmeister.plan_and_preprocess.homogenize import homogenize
 from meisenmeister.plan_and_preprocess.plan_and_preprocess import plan_and_preprocess
 from meisenmeister.plan_and_preprocess.plan_experiment import plan_experiment
 from meisenmeister.plan_and_preprocess.preprocess import preprocess
+from meisenmeister.training.train import train
 
 
 def mm_extract_dataset_fingerprint() -> None:
@@ -125,6 +126,21 @@ def mm_plan_and_preprocess() -> None:
     )
     args = parser.parse_args()
     plan_and_preprocess(args.d, num_workers=args.num_workers)
+
+
+def mm_train() -> None:
+    parser = argparse.ArgumentParser(
+        prog="mm_train",
+        description="Build the training dataset and dataloader, iterate once, and print DONE.",
+    )
+    parser.add_argument(
+        "-d",
+        type=int,
+        required=True,
+        help="Integer dataset identifier.",
+    )
+    args = parser.parse_args()
+    train(args.d)
 
 
 if __name__ == "__main__":

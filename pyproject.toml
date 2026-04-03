@@ -14,6 +14,7 @@ dependencies = [
     "breastdivider",
     "numpy",
     "SimpleITK",
+    "torch",
     "tqdm",
 ]
 
@@ -24,6 +25,7 @@ mm_homogenize = "meisenmeister.cli:mm_homogenize"
 mm_plan_experment = "meisenmeister.cli:mm_plan_experment"
 mm_preprocess = "meisenmeister.cli:mm_preprocess"
 mm_plan_and_preprocess = "meisenmeister.cli:mm_plan_and_preprocess"
+mm_train = "meisenmeister.cli:mm_train"
 
 [tool.setuptools]
 include-package-data = true
