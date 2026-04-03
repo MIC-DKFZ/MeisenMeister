@@ -1,6 +1,10 @@
 """Utility package for meisenmeister."""
 
-from .file_utils import load_dataset_json, verify_training_files_present
+from .file_utils import (
+    load_dataset_json,
+    verify_roi_masks_present,
+    verify_training_files_present,
+)
 from .path_utils import (
     find_dataset_dir,
     mm_preprocessed,
@@ -15,6 +19,7 @@ __all__ = [
     "mm_preprocessed",
     "mm_results",
     "load_dataset_json",
+    "verify_roi_masks_present",
     "verify_training_files_present",
     "find_dataset_dir",
     "require_global_paths_set",

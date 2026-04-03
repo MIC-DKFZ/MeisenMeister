@@ -8,6 +8,11 @@ REQUIRED_DATASET_JSON_KEYS = (
     "labels",
     "numTraining",
 )
+OPTIONAL_MASKS_TR_METADATA_FILES = {
+    "dataset.json",
+    "plans.json",
+    "predict_from_raw_data_args.json",
+}
 
 
 def load_dataset_json(dataset_dir: Path) -> dict:
@@ -30,7 +35,9 @@ def load_dataset_json(dataset_dir: Path) -> dict:
     return dataset_json
 
 
-def verify_training_files_present(dataset_dir: Path, dataset_json: dict) -> dict[str, list[Path]]:
+def verify_training_files_present(
+    dataset_dir: Path, dataset_json: dict
+) -> dict[str, list[Path]]:
     images_tr_dir = dataset_dir / "imagesTr"
     if not images_tr_dir.is_dir():
         raise FileNotFoundError(f"Missing imagesTr directory in {dataset_dir}")
@@ -45,7 +52,9 @@ def verify_training_files_present(dataset_dir: Path, dataset_json: dict) -> dict
     )
 
     channel_ids = sorted(int(channel_id) for channel_id in channel_names)
-    expected_suffixes = [f"_{channel_id:04d}{file_ending}" for channel_id in channel_ids]
+    expected_suffixes = [
+        f"_{channel_id:04d}{file_ending}" for channel_id in channel_ids
+    ]
     expected_suffix_set = set(expected_suffixes)
 
     case_files: dict[str, list[Path]] = {}
@@ -113,3 +122,41 @@ def verify_training_files_present(dataset_dir: Path, dataset_json: dict) -> dict
         )
 
     return case_files
+
+
+def verify_roi_masks_present(
+    dataset_dir: Path,
+    dataset_json: dict,
+    case_files: dict[str, list[Path]],
+):
+    masks_tr_dir = dataset_dir / "masksTr"
+    if not masks_tr_dir.is_dir():
+        raise FileNotFoundError(f"Missing masksTr directory in {dataset_dir}")
+
+    file_ending = dataset_json["file_ending"]
+    expected_mask_names = {f"{case_id}{file_ending}" for case_id in case_files}
+
+    unexpected_masks = sorted(
+        path.name
+        for path in masks_tr_dir.iterdir()
+        if path.is_file()
+        and path.name not in expected_mask_names
+        and path.name not in OPTIONAL_MASKS_TR_METADATA_FILES
+    )
+    if unexpected_masks:
+        raise ValueError(
+            f"Found unexpected mask files in {masks_tr_dir}: {', '.join(unexpected_masks)}"
+        )
+
+    invalid_cases: list[str] = []
+    for case_id in sorted(case_files):
+        mask_path = masks_tr_dir / f"{case_id}{file_ending}"
+        if not mask_path.is_file():
+            invalid_cases.append(f"{case_id}: missing mask file {mask_path.name}")
+            continue
+
+    if invalid_cases:
+        raise ValueError(
+            "ROI masks are incomplete or inconsistent in "
+            f"{masks_tr_dir}: {'; '.join(invalid_cases)}"
+        )

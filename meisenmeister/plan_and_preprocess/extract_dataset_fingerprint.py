@@ -2,6 +2,7 @@ from meisenmeister.utils import (
     find_dataset_dir,
     load_dataset_json,
     require_global_paths_set,
+    verify_roi_masks_present,
     verify_training_files_present,
     verify_required_global_paths_set,
 )
@@ -17,6 +18,7 @@ def extract_dataset_fingerprint(d: int):
     dataset_dir = find_dataset_dir(mm_raw, dataset_id)
     dataset_json = load_dataset_json(dataset_dir)
     case_files = verify_training_files_present(dataset_dir, dataset_json)
+    verify_roi_masks_present(dataset_dir, dataset_json, case_files)
     print(dataset_dir)
     print(dataset_json)
     print(list(case_files.keys()))
