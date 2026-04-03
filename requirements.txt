@@ -1,7 +1,1 @@
-pytorch_lightning
-dynamic_network_architectures
-torch
-torchvision
-numpy
-blosc2
-nibabel
+breastdivider

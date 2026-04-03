@@ -6,3 +6,5 @@ __pycache__
 *.pt
 *.pth
 *.b2nd
+build
+meisenmeister.egg-info

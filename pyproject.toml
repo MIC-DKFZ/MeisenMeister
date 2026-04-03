@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "meisenmeister"
+version = "0.1.0"
+description = "Meisenmeister utilities and CLI entrypoints."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+dependencies = [
+    "breastdivider",
+]
+
+[project.scripts]
+mm_extract_dataset_fingerprint = "meisenmeister.cli:mm_extract_dataset_fingerprint"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["meisenmeister*"]

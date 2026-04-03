@@ -24,8 +24,16 @@ The current training script is intentionally minimal and expects exactly 3 prepr
 ```bash
 conda create -n meisenmeister python=3.12 -y
 conda activate meisenmeister
-pip install -r requirements.txt
+pip install .
 ```
+
+CLI entrypoint:
+
+```bash
+mm_extract_dataset_fingerprint -d 1
+```
+
+The installable Python modules live under `meisenmeister/`.
 
 ## 1. Preprocess NIfTI to `.b2nd`
 
