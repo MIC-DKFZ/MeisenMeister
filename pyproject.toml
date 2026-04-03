@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 mm_extract_dataset_fingerprint = "meisenmeister.cli:mm_extract_dataset_fingerprint"
+mm_create_breast_segmentations = "meisenmeister.cli:mm_create_breast_segmentations"
 
 [tool.setuptools]
 include-package-data = true
