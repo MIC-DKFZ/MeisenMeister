@@ -55,6 +55,7 @@ def validate_resume_state(
     fold: int,
     trainer_name: str,
     architecture_name: str,
+    experiment_postfix: str | None,
 ) -> None:
     config = checkpoint["trainer_config"]
     expected = {
@@ -63,6 +64,7 @@ def validate_resume_state(
         "fold": fold,
         "trainer_name": trainer_name,
         "architecture_name": architecture_name,
+        "experiment_postfix": experiment_postfix,
     }
     for key, expected_value in expected.items():
         actual_value = config.get(key)
@@ -145,6 +147,8 @@ def build_trainer_config(
     fold: int,
     trainer_name: str,
     architecture_name: str,
+    experiment_postfix: str | None,
+    source_weights_path: str | None,
     results_dir: Path,
     experiment_dir: Path,
     fold_dir: Path,
@@ -163,6 +167,8 @@ def build_trainer_config(
         "fold": fold,
         "trainer_name": trainer_name,
         "architecture_name": architecture_name,
+        "experiment_postfix": experiment_postfix,
+        "source_weights_path": source_weights_path,
         "results_dir": str(results_dir),
         "experiment_dir": str(experiment_dir),
         "fold_dir": str(fold_dir),
@@ -176,3 +182,25 @@ def build_trainer_config(
         "num_classes": getattr(architecture, "num_classes", None),
         "in_channels": getattr(architecture, "in_channels", None),
     }
+
+
+def load_pretrained_model_weights(
+    *,
+    path: Path,
+    architecture,
+    device: torch.device,
+) -> None:
+    if not path.is_file():
+        raise FileNotFoundError(f"Pretrained weights file does not exist: {path}")
+
+    payload = torch.load(path, map_location=device, weights_only=False)
+    if isinstance(payload, dict) and "model_state_dict" in payload:
+        state_dict = payload["model_state_dict"]
+    elif isinstance(payload, dict):
+        state_dict = payload
+    else:
+        raise TypeError(
+            f"Unsupported pretrained weights payload type: {type(payload).__name__}"
+        )
+
+    architecture.load_state_dict(state_dict)

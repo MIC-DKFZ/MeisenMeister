@@ -15,9 +15,13 @@ def build_experiment_paths(
     dataset_name: str,
     trainer_name: str,
     architecture_name: str,
+    experiment_postfix: str | None,
     fold: int,
 ) -> dict[str, Path]:
-    experiment_dir = results_dir / dataset_name / f"{trainer_name}_{architecture_name}"
+    experiment_name = f"{trainer_name}_{architecture_name}"
+    if experiment_postfix:
+        experiment_name = f"{experiment_name}_{experiment_postfix}"
+    experiment_dir = results_dir / dataset_name / experiment_name
     fold_dir = experiment_dir / f"fold_{fold}"
     return {
         "experiment_dir": experiment_dir,

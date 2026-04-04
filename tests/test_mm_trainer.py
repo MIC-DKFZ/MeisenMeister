@@ -58,6 +58,8 @@ class MMTrainerTests(unittest.TestCase):
         *,
         continue_training: bool = False,
         num_epochs: int = 2,
+        weights_path: Path | None = None,
+        experiment_postfix: str | None = None,
     ) -> mmTrainer:
         with patch(
             "meisenmeister.training.trainers.mm_trainer.get_fold_sample_ids",
@@ -78,6 +80,8 @@ class MMTrainerTests(unittest.TestCase):
                 num_workers=0,
                 shuffle=False,
                 continue_training=continue_training,
+                weights_path=weights_path,
+                experiment_postfix=experiment_postfix,
             )
 
         trainer.device = torch.device("cpu")
@@ -197,6 +201,98 @@ class MMTrainerTests(unittest.TestCase):
         self.assertEqual(checkpoint["best_state"]["epoch"], 2)
         self.assertIn("Saved new best model at epoch 1", trainer.log_path.read_text())
         self.assertIn("Saved new best model at epoch 2", trainer.log_path.read_text())
+        self.assertIsNone(checkpoint["trainer_config"]["source_weights_path"])
+        self.assertIsNone(checkpoint["trainer_config"]["experiment_postfix"])
+
+    def test_experiment_postfix_changes_experiment_directory_name(self) -> None:
+        trainer = self._make_trainer(experiment_postfix="finetuningNNSSL")
+
+        self.assertEqual(
+            trainer.experiment_dir.name,
+            "mmTrainer_ResNet3D18_finetuningNNSSL",
+        )
+
+    def test_fit_loads_external_plain_state_dict_weights(self) -> None:
+        source_model = _TinyNet()
+        with torch.no_grad():
+            source_model.fc.weight.fill_(1.25)
+            source_model.fc.bias.fill_(0.5)
+        weights_path = self.root / "pretrained_state_dict.pt"
+        torch.save(source_model.state_dict(), weights_path)
+
+        trainer = self._make_trainer(
+            num_epochs=1,
+            weights_path=weights_path,
+            experiment_postfix="finetuningNNSSL",
+        )
+        train_loader = [object()]
+        val_loader = [object()]
+
+        with (
+            patch.object(trainer, "get_train_dataloader", return_value=train_loader),
+            patch.object(trainer, "get_val_dataloader", return_value=val_loader),
+            patch.object(
+                trainer,
+                "train_step",
+                return_value={"loss": 0.9, "num_samples": 2, "num_correct": 1},
+            ),
+            patch.object(
+                trainer,
+                "validate_step",
+                return_value={
+                    "loss": 0.7,
+                    "num_samples": 2,
+                    "num_correct": 2,
+                    "labels": torch.tensor([0, 0]),
+                    "predictions": torch.tensor([0, 0]),
+                    "probabilities": torch.tensor([[0.9, 0.1], [0.8, 0.2]]),
+                },
+            ),
+        ):
+            trainer.fit()
+
+        self.assertTrue(
+            torch.allclose(
+                trainer.get_architecture().fc.weight.detach(),
+                source_model.fc.weight.detach(),
+            )
+        )
+        checkpoint = torch.load(
+            trainer.last_checkpoint_path, map_location="cpu", weights_only=False
+        )
+        self.assertEqual(
+            checkpoint["trainer_config"]["source_weights_path"], str(weights_path)
+        )
+        self.assertEqual(
+            checkpoint["trainer_config"]["experiment_postfix"], "finetuningNNSSL"
+        )
+
+    def test_fit_loads_external_checkpoint_model_state_dict_weights(self) -> None:
+        source_model = _TinyNet()
+        with torch.no_grad():
+            source_model.fc.weight.fill_(0.75)
+            source_model.fc.bias.fill_(0.25)
+        weights_path = self.root / "pretrained_checkpoint.pt"
+        torch.save({"model_state_dict": source_model.state_dict()}, weights_path)
+
+        trainer = self._make_trainer(num_epochs=0, weights_path=weights_path)
+        trainer.fold_dir.mkdir(parents=True, exist_ok=True)
+        trainer.log_path.write_text("", encoding="utf-8")
+
+        from meisenmeister.utils.training import load_pretrained_model_weights
+
+        load_pretrained_model_weights(
+            path=weights_path,
+            architecture=trainer.get_architecture(),
+            device=trainer.device,
+        )
+
+        self.assertTrue(
+            torch.allclose(
+                trainer.get_architecture().fc.weight.detach(),
+                source_model.fc.weight.detach(),
+            )
+        )
 
     def test_fit_resume_continues_same_experiment_directory(self) -> None:
         initial_trainer = self._make_trainer(num_epochs=1)
@@ -275,6 +371,82 @@ class MMTrainerTests(unittest.TestCase):
         self.assertEqual(checkpoint["history"]["epoch"], [1, 2])
         self.assertEqual(checkpoint["last_completed_epoch"], 2)
         self.assertEqual(checkpoint["best_state"]["epoch"], 2)
+
+    def test_fit_resume_uses_matching_postfix_experiment_directory(self) -> None:
+        initial_trainer = self._make_trainer(
+            num_epochs=1,
+            experiment_postfix="finetuningNNSSL",
+        )
+        train_loader = [object()]
+        val_loader = [object()]
+
+        with (
+            patch.object(
+                initial_trainer, "get_train_dataloader", return_value=train_loader
+            ),
+            patch.object(
+                initial_trainer, "get_val_dataloader", return_value=val_loader
+            ),
+            patch.object(
+                initial_trainer,
+                "train_step",
+                return_value={"loss": 0.8, "num_samples": 2, "num_correct": 1},
+            ),
+            patch.object(
+                initial_trainer,
+                "validate_step",
+                return_value={
+                    "loss": 0.6,
+                    "num_samples": 2,
+                    "num_correct": 2,
+                    "labels": torch.tensor([0, 1]),
+                    "predictions": torch.tensor([0, 1]),
+                    "probabilities": torch.tensor([[0.9, 0.1], [0.1, 0.9]]),
+                },
+            ),
+        ):
+            initial_trainer.fit()
+
+        resumed_trainer = self._make_trainer(
+            continue_training=True,
+            num_epochs=2,
+            experiment_postfix="finetuningNNSSL",
+        )
+        with (
+            patch.object(
+                resumed_trainer, "get_train_dataloader", return_value=train_loader
+            ),
+            patch.object(
+                resumed_trainer, "get_val_dataloader", return_value=val_loader
+            ),
+            patch.object(
+                resumed_trainer,
+                "train_step",
+                return_value={"loss": 0.4, "num_samples": 2, "num_correct": 2},
+            ),
+            patch.object(
+                resumed_trainer,
+                "validate_step",
+                return_value={
+                    "loss": 0.4,
+                    "num_samples": 2,
+                    "num_correct": 2,
+                    "labels": torch.tensor([0, 1]),
+                    "predictions": torch.tensor([0, 1]),
+                    "probabilities": torch.tensor([[0.98, 0.02], [0.02, 0.98]]),
+                },
+            ),
+        ):
+            resumed_trainer.fit()
+
+        checkpoint = torch.load(
+            resumed_trainer.last_checkpoint_path,
+            map_location="cpu",
+            weights_only=False,
+        )
+        self.assertEqual(
+            checkpoint["trainer_config"]["experiment_postfix"], "finetuningNNSSL"
+        )
 
     def test_resume_falls_back_to_best_checkpoint_if_last_is_corrupted(self) -> None:
         initial_trainer = self._make_trainer(num_epochs=1)

@@ -7,6 +7,7 @@ from .artifacts import (
 )
 from .checkpoints import (
     build_trainer_config,
+    load_pretrained_model_weights,
     load_resume_checkpoint,
     restore_checkpoint_payload,
     save_checkpoint,
@@ -30,6 +31,7 @@ __all__ = [
     "compute_ema",
     "create_empty_history",
     "format_metric",
+    "load_pretrained_model_weights",
     "load_resume_checkpoint",
     "log_message",
     "prepare_output_dir",

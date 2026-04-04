@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from meisenmeister.training.registry import get_trainer_class
 from meisenmeister.training.splits import get_fold_sample_ids
 from meisenmeister.utils import (
@@ -14,11 +16,15 @@ def train(
     trainer_name: str = "mmTrainer",
     architecture_name: str = "ResNet3D18",
     continue_training: bool = False,
+    weights_path: str | None = None,
+    experiment_postfix: str | None = None,
 ) -> None:
     if not 0 <= d <= 999:
         raise ValueError(f"Dataset id must be between 0 and 999, got {d}")
     if fold < 0:
         raise ValueError(f"Fold must be non-negative, got {fold}")
+    if continue_training and weights_path is not None:
+        raise ValueError("Cannot use --continue-training and --weights together")
 
     dataset_id = f"{d:03d}"
     paths = verify_required_global_paths_set()
@@ -39,5 +45,7 @@ def train(
         results_dir=mm_results,
         architecture_name=architecture_name,
         continue_training=continue_training,
+        weights_path=None if weights_path is None else Path(weights_path),
+        experiment_postfix=experiment_postfix,
     )
     trainer.fit()

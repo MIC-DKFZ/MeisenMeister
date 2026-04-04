@@ -21,6 +21,8 @@ class _MockTrainer:
         results_dir: Path,
         architecture_name: str,
         continue_training: bool = False,
+        weights_path: Path | None = None,
+        experiment_postfix: str | None = None,
     ):
         self.dataset_id = dataset_id
         self.fold = fold
@@ -29,6 +31,8 @@ class _MockTrainer:
         self.results_dir = results_dir
         self.architecture_name = architecture_name
         self.continue_training = continue_training
+        self.weights_path = weights_path
+        self.experiment_postfix = experiment_postfix
         self.fit_called = False
         type(self).last_instance = self
 
@@ -93,6 +97,8 @@ class TrainEntrypointTests(unittest.TestCase):
         )
         self.assertEqual(_MockTrainer.last_instance.results_dir, root / "results")
         self.assertFalse(_MockTrainer.last_instance.continue_training)
+        self.assertIsNone(_MockTrainer.last_instance.weights_path)
+        self.assertIsNone(_MockTrainer.last_instance.experiment_postfix)
         self.assertTrue(_MockTrainer.last_instance.fit_called)
 
     def test_train_passes_continue_training_to_trainer(self) -> None:
@@ -137,6 +143,67 @@ class TrainEntrypointTests(unittest.TestCase):
                 )
 
         self.assertTrue(_MockTrainer.last_instance.continue_training)
+
+    def test_train_passes_weights_and_postfix_to_trainer(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            dataset_dir = root / "Dataset_001_Test"
+            preprocessed_root = root / "preprocessed"
+            dataset_dir.mkdir()
+            preprocessed_root.mkdir()
+
+            with (
+                patch(
+                    "meisenmeister.training.train.verify_required_global_paths_set",
+                    return_value={
+                        "mm_raw": root,
+                        "mm_preprocessed": preprocessed_root,
+                        "mm_results": root / "results",
+                    },
+                ),
+                patch(
+                    "meisenmeister.training.train.find_dataset_dir",
+                    return_value=dataset_dir,
+                ),
+                patch(
+                    "meisenmeister.training.train.get_fold_sample_ids",
+                    return_value={
+                        "train": ["case_001_left", "case_001_right"],
+                        "val": ["case_002_left", "case_002_right"],
+                    },
+                ),
+                patch(
+                    "meisenmeister.training.train.get_trainer_class",
+                    return_value=_MockTrainer,
+                ),
+            ):
+                train_module.train(
+                    1,
+                    fold=0,
+                    trainer_name="mmTrainer_Debug",
+                    architecture_name="ResNet3D18",
+                    weights_path="/tmp/pretrained.pt",
+                    experiment_postfix="finetuningNNSSL",
+                )
+
+        self.assertEqual(
+            _MockTrainer.last_instance.weights_path, Path("/tmp/pretrained.pt")
+        )
+        self.assertEqual(
+            _MockTrainer.last_instance.experiment_postfix, "finetuningNNSSL"
+        )
+
+    def test_train_rejects_continue_training_with_weights(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            "Cannot use --continue-training and --weights together",
+        ):
+            train_module.train.__wrapped__(
+                1,
+                fold=0,
+                continue_training=True,
+                weights_path="/tmp/pretrained.pt",
+            )
 
 
 if __name__ == "__main__":

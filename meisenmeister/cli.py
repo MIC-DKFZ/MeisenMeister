@@ -169,6 +169,15 @@ def mm_train() -> None:
         action="store_true",
         help="Continue training from model_last.pt in the computed experiment fold directory.",
     )
+    parser.add_argument(
+        "-w",
+        "--weights",
+        help="Path to pretrained weights for starting a fresh fine-tuning run.",
+    )
+    parser.add_argument(
+        "--postfix",
+        help="Optional suffix appended to the experiment name.",
+    )
     args = parser.parse_args()
     train(
         args.d,
@@ -176,6 +185,8 @@ def mm_train() -> None:
         trainer_name=args.trainer,
         architecture_name=args.architecture,
         continue_training=args.continue_training,
+        weights_path=args.weights,
+        experiment_postfix=args.postfix,
     )
 
 

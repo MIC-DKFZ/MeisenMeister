@@ -20,6 +20,7 @@ from meisenmeister.utils.training import (
     compute_ema,
     create_empty_history,
     format_metric,
+    load_pretrained_model_weights,
     load_resume_checkpoint,
     log_message,
     prepare_output_dir,
@@ -50,6 +51,8 @@ class mmTrainer(BaseTrainer):
         initial_lr: float = 3e-4,
         weight_decay: float = 3e-5,
         continue_training: bool = False,
+        weights_path: Path | None = None,
+        experiment_postfix: str | None = None,
     ) -> None:
         super().__init__(dataset_id, fold, dataset_dir, preprocessed_dataset_dir)
         self.results_dir = results_dir
@@ -61,6 +64,8 @@ class mmTrainer(BaseTrainer):
         self.initial_lr = initial_lr
         self.weight_decay = weight_decay
         self.continue_training = continue_training
+        self.weights_path = weights_path
+        self.experiment_postfix = experiment_postfix
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.split_sample_ids = get_fold_sample_ids(preprocessed_dataset_dir, fold)
         experiment_paths = build_experiment_paths(
@@ -68,6 +73,7 @@ class mmTrainer(BaseTrainer):
             dataset_name=self.dataset_dir.name,
             trainer_name=self.__class__.__name__,
             architecture_name=self.architecture_name,
+            experiment_postfix=self.experiment_postfix,
             fold=self.fold,
         )
         self.experiment_dir = experiment_paths["experiment_dir"]
@@ -112,6 +118,7 @@ class mmTrainer(BaseTrainer):
                 fold=self.fold,
                 trainer_name=self.__class__.__name__,
                 architecture_name=self.architecture_name,
+                experiment_postfix=self.experiment_postfix,
             )
 
         train_dataset = self.get_train_dataset()
@@ -131,6 +138,16 @@ class mmTrainer(BaseTrainer):
             start_epoch = int(self._resume_state["last_completed_epoch"]) + 1
             log_message(
                 f"Resuming training from epoch {start_epoch} in {self.fold_dir}",
+                self.log_path,
+            )
+        elif self.weights_path is not None:
+            load_pretrained_model_weights(
+                path=self.weights_path,
+                architecture=self.get_architecture(),
+                device=self.device,
+            )
+            log_message(
+                f"Initialized model weights from {self.weights_path}",
                 self.log_path,
             )
 
@@ -235,6 +252,12 @@ class mmTrainer(BaseTrainer):
                         fold=self.fold,
                         trainer_name=self.__class__.__name__,
                         architecture_name=self.architecture_name,
+                        experiment_postfix=self.experiment_postfix,
+                        source_weights_path=(
+                            None
+                            if self.weights_path is None
+                            else str(self.weights_path)
+                        ),
                         results_dir=self.results_dir,
                         experiment_dir=self.experiment_dir,
                         fold_dir=self.fold_dir,
@@ -268,6 +291,10 @@ class mmTrainer(BaseTrainer):
                     fold=self.fold,
                     trainer_name=self.__class__.__name__,
                     architecture_name=self.architecture_name,
+                    experiment_postfix=self.experiment_postfix,
+                    source_weights_path=(
+                        None if self.weights_path is None else str(self.weights_path)
+                    ),
                     results_dir=self.results_dir,
                     experiment_dir=self.experiment_dir,
                     fold_dir=self.fold_dir,
