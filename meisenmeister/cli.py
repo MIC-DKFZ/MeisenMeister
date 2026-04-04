@@ -131,7 +131,7 @@ def mm_plan_and_preprocess() -> None:
 def mm_train() -> None:
     parser = argparse.ArgumentParser(
         prog="mm_train",
-        description="Build the training dataset and dataloader, iterate once, and print DONE.",
+        description="Resolve a trainer, build its training components, and call fit().",
     )
     parser.add_argument(
         "-d",
@@ -139,8 +139,13 @@ def mm_train() -> None:
         required=True,
         help="Integer dataset identifier.",
     )
+    parser.add_argument(
+        "--trainer",
+        default="mmTrainer",
+        help="Trainer class name registered under meisenmeister.training.trainers.",
+    )
     args = parser.parse_args()
-    train(args.d)
+    train(args.d, trainer_name=args.trainer)
 
 
 if __name__ == "__main__":

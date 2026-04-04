@@ -1,7 +1,4 @@
-import torch
-from torch.utils.data import DataLoader
-
-from meisenmeister.dataloading import MeisenmeisterROIDataset
+from meisenmeister.training.registry import get_trainer_class
 from meisenmeister.utils import (
     find_dataset_dir,
     require_global_paths_set,
@@ -10,7 +7,7 @@ from meisenmeister.utils import (
 
 
 @require_global_paths_set
-def train(d: int) -> None:
+def train(d: int, trainer_name: str = "mmTrainer") -> None:
     if not 0 <= d <= 999:
         raise ValueError(f"Dataset id must be between 0 and 999, got {d}")
 
@@ -22,22 +19,10 @@ def train(d: int) -> None:
     dataset_dir = find_dataset_dir(mm_raw, dataset_id)
     preprocessed_dataset_dir = mm_preprocessed / dataset_dir.name
 
-    dataset = MeisenmeisterROIDataset(preprocessed_dataset_dir)
-    dataloader = DataLoader(
-        dataset,
-        batch_size=2,
-        shuffle=False,
-        num_workers=0,
-        pin_memory=torch.cuda.is_available(),
+    trainer_class = get_trainer_class(trainer_name)
+    trainer = trainer_class(
+        dataset_id=dataset_id,
+        dataset_dir=dataset_dir,
+        preprocessed_dataset_dir=preprocessed_dataset_dir,
     )
-
-    print(f"Dataset: {dataset_dir.name}")
-    print(f"Samples: {len(dataset)}")
-
-    for batch_idx, batch in enumerate(dataloader, start=1):
-        print(
-            f"Batch {batch_idx}: image_shape={tuple(batch['image'].shape)}, "
-            f"sample_ids={list(batch['sample_id'])}"
-        )
-
-    print("DONE")
+    trainer.fit()
