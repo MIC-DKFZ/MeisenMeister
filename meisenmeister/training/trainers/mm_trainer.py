@@ -6,6 +6,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
+from meisenmeister.architectures import get_architecture_class
 from meisenmeister.dataloading import MeisenmeisterROIDataset
 from meisenmeister.training.base_trainer import BaseTrainer
 from meisenmeister.training.splits import get_fold_sample_ids
@@ -18,6 +19,7 @@ class mmTrainer(BaseTrainer):
         fold: int,
         dataset_dir: Path,
         preprocessed_dataset_dir: Path,
+        architecture_name: str = "ResNet3D18",
         num_epochs: int = 1,
         batch_size: int = 2,
         num_workers: int = 0,
@@ -28,6 +30,7 @@ class mmTrainer(BaseTrainer):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.shuffle = shuffle
+        self.architecture_name = architecture_name
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.split_sample_ids = get_fold_sample_ids(preprocessed_dataset_dir, fold)
         self._train_dataset = None
@@ -70,7 +73,19 @@ class mmTrainer(BaseTrainer):
 
     def get_architecture(self):
         if self._architecture is None:
-            self._architecture = nn.Identity().to(self.device)
+            architecture_class = get_architecture_class(self.architecture_name)
+            in_channels = int(self.get_train_dataset()[0]["image"].shape[0])
+            labels = [
+                sample["label"]
+                for sample in (
+                    self.get_train_dataset().samples + self.get_val_dataset().samples
+                )
+            ]
+            num_classes = max(2, max(labels) + 1)
+            self._architecture = architecture_class(
+                in_channels=in_channels,
+                num_classes=num_classes,
+            ).to(self.device)
         return self._architecture
 
     def get_loss(self):

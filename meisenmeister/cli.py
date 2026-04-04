@@ -157,8 +157,19 @@ def mm_train() -> None:
         default="mmTrainer",
         help="Trainer class name registered under meisenmeister.training.trainers.",
     )
+    parser.add_argument(
+        "-a",
+        "--architecture",
+        default="ResNet3D18",
+        help="Architecture class name registered under meisenmeister.architectures.",
+    )
     args = parser.parse_args()
-    train(args.d, fold=args.fold, trainer_name=args.trainer)
+    train(
+        args.d,
+        fold=args.fold,
+        trainer_name=args.trainer,
+        architecture_name=args.architecture,
+    )
 
 
 @require_global_paths_set

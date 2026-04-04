@@ -5,7 +5,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from meisenmeister.training import BaseTrainer, get_trainer_class, get_trainer_registry
+from meisenmeister.training import (
+    BaseTrainer,
+    get_available_architecture_names,
+    get_trainer_class,
+    get_trainer_registry,
+)
 from meisenmeister.training.trainers.mm_trainer import mmTrainer
 
 
@@ -47,6 +52,9 @@ class TrainingRegistryTests(unittest.TestCase):
                 trainer = mmTrainer("001", 0, root, root)
 
         self.assertIsInstance(trainer, BaseTrainer)
+
+    def test_architecture_exports_include_resnet3d18(self) -> None:
+        self.assertIn("ResNet3D18", get_available_architecture_names())
 
 
 if __name__ == "__main__":

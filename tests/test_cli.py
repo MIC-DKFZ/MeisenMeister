@@ -15,19 +15,39 @@ class CliTests(unittest.TestCase):
         ):
             cli.mm_train()
 
-        mock_train.assert_called_once_with(1, fold=0, trainer_name="mmTrainer")
+        mock_train.assert_called_once_with(
+            1,
+            fold=0,
+            trainer_name="mmTrainer",
+            architecture_name="ResNet3D18",
+        )
 
     def test_mm_train_passes_explicit_trainer(self) -> None:
         with (
             patch(
                 "sys.argv",
-                ["mm_train", "-d", "1", "-f", "3", "--trainer", "mmTrainer_Debug"],
+                [
+                    "mm_train",
+                    "-d",
+                    "1",
+                    "-f",
+                    "3",
+                    "--trainer",
+                    "mmTrainer_Debug",
+                    "-a",
+                    "ResNet3D18",
+                ],
             ),
             patch("meisenmeister.cli.train") as mock_train,
         ):
             cli.mm_train()
 
-        mock_train.assert_called_once_with(1, fold=3, trainer_name="mmTrainer_Debug")
+        mock_train.assert_called_once_with(
+            1,
+            fold=3,
+            trainer_name="mmTrainer_Debug",
+            architecture_name="ResNet3D18",
+        )
 
     def test_mm_create_5fold_writes_to_preprocessed_dataset(self) -> None:
         with (

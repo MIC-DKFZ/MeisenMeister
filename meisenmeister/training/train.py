@@ -8,7 +8,12 @@ from meisenmeister.utils import (
 
 
 @require_global_paths_set
-def train(d: int, fold: int, trainer_name: str = "mmTrainer") -> None:
+def train(
+    d: int,
+    fold: int,
+    trainer_name: str = "mmTrainer",
+    architecture_name: str = "ResNet3D18",
+) -> None:
     if not 0 <= d <= 999:
         raise ValueError(f"Dataset id must be between 0 and 999, got {d}")
     if fold < 0:
@@ -29,5 +34,6 @@ def train(d: int, fold: int, trainer_name: str = "mmTrainer") -> None:
         fold=fold,
         dataset_dir=dataset_dir,
         preprocessed_dataset_dir=preprocessed_dataset_dir,
+        architecture_name=architecture_name,
     )
     trainer.fit()

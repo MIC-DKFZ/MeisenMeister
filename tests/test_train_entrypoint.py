@@ -18,11 +18,13 @@ class _MockTrainer:
         fold: int,
         dataset_dir: Path,
         preprocessed_dataset_dir: Path,
+        architecture_name: str,
     ):
         self.dataset_id = dataset_id
         self.fold = fold
         self.dataset_dir = dataset_dir
         self.preprocessed_dataset_dir = preprocessed_dataset_dir
+        self.architecture_name = architecture_name
         self.fit_called = False
         type(self).last_instance = self
 
@@ -64,7 +66,12 @@ class TrainEntrypointTests(unittest.TestCase):
                     return_value=_MockTrainer,
                 ) as mock_get_trainer_class,
             ):
-                train_module.train(1, fold=0, trainer_name="mmTrainer_Debug")
+                train_module.train(
+                    1,
+                    fold=0,
+                    trainer_name="mmTrainer_Debug",
+                    architecture_name="ResNet3D18",
+                )
 
         mock_get_fold_sample_ids.assert_called_once_with(
             preprocessed_root / dataset_dir.name,
@@ -74,6 +81,7 @@ class TrainEntrypointTests(unittest.TestCase):
         self.assertIsNotNone(_MockTrainer.last_instance)
         self.assertEqual(_MockTrainer.last_instance.dataset_id, "001")
         self.assertEqual(_MockTrainer.last_instance.fold, 0)
+        self.assertEqual(_MockTrainer.last_instance.architecture_name, "ResNet3D18")
         self.assertEqual(_MockTrainer.last_instance.dataset_dir, dataset_dir)
         self.assertEqual(
             _MockTrainer.last_instance.preprocessed_dataset_dir,
