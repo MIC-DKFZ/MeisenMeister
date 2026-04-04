@@ -184,10 +184,12 @@ def _preprocess_case(
         normalized_channels = _zscore_per_channel(fitted_channels, fitted_mask)
 
         output_path = output_dir / f"{case_id}_{roi_name}.b2nd"
+        full_image = normalized_channels.astype(np.float32)
         blosc2.asarray(
-            normalized_channels.astype(np.float32),
+            full_image,
             urlpath=str(output_path),
             mode="w",
+            chunks=full_image.shape,
         )
 
 
