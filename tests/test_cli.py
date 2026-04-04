@@ -20,6 +20,7 @@ class CliTests(unittest.TestCase):
             fold=0,
             trainer_name="mmTrainer",
             architecture_name="ResNet3D18",
+            continue_training=False,
         )
 
     def test_mm_train_passes_explicit_trainer(self) -> None:
@@ -47,6 +48,22 @@ class CliTests(unittest.TestCase):
             fold=3,
             trainer_name="mmTrainer_Debug",
             architecture_name="ResNet3D18",
+            continue_training=False,
+        )
+
+    def test_mm_train_passes_continue_training_flag(self) -> None:
+        with (
+            patch("sys.argv", ["mm_train", "-d", "1", "-f", "0", "-c"]),
+            patch("meisenmeister.cli.train") as mock_train,
+        ):
+            cli.mm_train()
+
+        mock_train.assert_called_once_with(
+            1,
+            fold=0,
+            trainer_name="mmTrainer",
+            architecture_name="ResNet3D18",
+            continue_training=True,
         )
 
     def test_mm_create_5fold_writes_to_preprocessed_dataset(self) -> None:

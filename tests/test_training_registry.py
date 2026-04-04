@@ -49,7 +49,7 @@ class TrainingRegistryTests(unittest.TestCase):
                     "val": ["case_002_left", "case_002_right"],
                 },
             ):
-                trainer = mmTrainer("001", 0, root, root)
+                trainer = mmTrainer("001", 0, root, root, root)
 
         self.assertIsInstance(trainer, BaseTrainer)
 

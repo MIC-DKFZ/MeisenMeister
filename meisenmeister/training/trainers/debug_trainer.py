@@ -10,18 +10,22 @@ class mmTrainer_Debug(mmTrainer):
         fold,
         dataset_dir,
         preprocessed_dataset_dir,
+        results_dir,
         architecture_name: str = "ResNet3D18",
+        continue_training: bool = False,
     ) -> None:
         super().__init__(
             dataset_id=dataset_id,
             fold=fold,
             dataset_dir=dataset_dir,
             preprocessed_dataset_dir=preprocessed_dataset_dir,
+            results_dir=results_dir,
             architecture_name=architecture_name,
             num_epochs=2,
             batch_size=1,
             num_workers=0,
             shuffle=True,
+            continue_training=continue_training,
         )
 
 

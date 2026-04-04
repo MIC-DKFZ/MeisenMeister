@@ -163,12 +163,19 @@ def mm_train() -> None:
         default="ResNet3D18",
         help="Architecture class name registered under meisenmeister.architectures.",
     )
+    parser.add_argument(
+        "-c",
+        "--continue-training",
+        action="store_true",
+        help="Continue training from model_last.pt in the computed experiment fold directory.",
+    )
     args = parser.parse_args()
     train(
         args.d,
         fold=args.fold,
         trainer_name=args.trainer,
         architecture_name=args.architecture,
+        continue_training=args.continue_training,
     )
 
 
