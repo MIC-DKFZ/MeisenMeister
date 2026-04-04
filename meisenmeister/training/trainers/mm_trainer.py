@@ -69,11 +69,25 @@ class mmTrainer(BaseTrainer):
         print(f"Weight decay: {self.weight_decay}")
 
         for epoch_idx in range(1, self.num_epochs + 1):
-            print(f"Epoch {epoch_idx}/{self.num_epochs}")
+            train_metrics = []
             for batch_idx, batch in enumerate(train_dataloader, start=1):
-                self.train_step(batch, batch_idx)
+                train_metrics.append(self.train_step(batch, batch_idx))
+
+            val_metrics = []
             for batch_idx, batch in enumerate(val_dataloader, start=1):
-                self.validate_step(batch, batch_idx)
+                val_metrics.append(self.validate_step(batch, batch_idx))
+
+            train_loss, train_accuracy = self._aggregate_epoch_metrics(train_metrics)
+            val_loss, val_accuracy = self._aggregate_epoch_metrics(val_metrics)
+            current_lr = optimizer.param_groups[0]["lr"]
+            print(
+                f"Epoch {epoch_idx}/{self.num_epochs} "
+                f"- train_loss: {train_loss:.4f} "
+                f"- train_acc: {train_accuracy:.4f} "
+                f"- val_loss: {val_loss:.4f} "
+                f"- val_acc: {val_accuracy:.4f} "
+                f"- lr: {current_lr:.6f}"
+            )
             scheduler.step()
 
         print("DONE")
@@ -137,13 +151,13 @@ class mmTrainer(BaseTrainer):
     def get_optimizer(self):
         if self._optimizer is None:
             architecture = self.get_architecture()
-            parameter = next(architecture.parameters(), None)
-            if parameter is None:
-                parameter = nn.Parameter(
-                    torch.zeros(1, requires_grad=True, device=self.device)
+            parameters = list(architecture.parameters())
+            if not parameters:
+                raise ValueError(
+                    f"Architecture '{architecture.__class__.__name__}' has no trainable parameters"
                 )
             self._optimizer = torch.optim.SGD(
-                [parameter],
+                parameters,
                 lr=self.initial_lr,
                 weight_decay=self.weight_decay,
                 momentum=0.99,
@@ -161,21 +175,52 @@ class mmTrainer(BaseTrainer):
         return self._scheduler
 
     def train_step(self, batch, batch_idx: int):
-        print(
-            f"Train batch {batch_idx}: image_shape={tuple(batch['image'].shape)}, "
-            f"sample_ids={list(batch['sample_id'])}"
-        )
+        del batch_idx
+        architecture = self.get_architecture()
+        optimizer = self.get_optimizer()
+        loss_fn = self.get_loss()
+        images = batch["image"].to(self.device, dtype=torch.float32, non_blocking=True)
+        labels = batch["label"].to(self.device, dtype=torch.long, non_blocking=True)
+
+        architecture.train()
+        optimizer.zero_grad()
+
+        logits = architecture(images)
+        loss = loss_fn(logits, labels)
+        loss.backward()
+        optimizer.step()
+
+        predictions = logits.argmax(dim=1)
         return {
-            "batch_idx": batch_idx,
-            "num_samples": len(batch["sample_id"]),
+            "loss": float(loss.detach().item()),
+            "num_samples": int(labels.shape[0]),
+            "num_correct": int((predictions == labels).sum().detach().item()),
         }
 
     def validate_step(self, batch, batch_idx: int):
-        print(
-            f"Validate batch {batch_idx}: labels_shape={tuple(batch['label'].shape)}, "
-            f"sample_ids={list(batch['sample_id'])}"
-        )
+        del batch_idx
+        architecture = self.get_architecture()
+        loss_fn = self.get_loss()
+        images = batch["image"].to(self.device, dtype=torch.float32, non_blocking=True)
+        labels = batch["label"].to(self.device, dtype=torch.long, non_blocking=True)
+
+        architecture.eval()
+        with torch.no_grad():
+            logits = architecture(images)
+            loss = loss_fn(logits, labels)
+            predictions = logits.argmax(dim=1)
+
         return {
-            "batch_idx": batch_idx,
-            "num_samples": len(batch["sample_id"]),
+            "loss": float(loss.detach().item()),
+            "num_samples": int(labels.shape[0]),
+            "num_correct": int((predictions == labels).sum().item()),
         }
+
+    def _aggregate_epoch_metrics(self, metrics):
+        total_samples = sum(metric["num_samples"] for metric in metrics)
+        if total_samples == 0:
+            raise ValueError("Cannot aggregate metrics for an empty epoch")
+
+        total_loss = sum(metric["loss"] * metric["num_samples"] for metric in metrics)
+        total_correct = sum(metric["num_correct"] for metric in metrics)
+        return total_loss / total_samples, total_correct / total_samples
