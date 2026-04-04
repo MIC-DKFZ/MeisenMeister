@@ -20,10 +20,12 @@ class mmTrainer(BaseTrainer):
         dataset_dir: Path,
         preprocessed_dataset_dir: Path,
         architecture_name: str = "ResNet3D18",
-        num_epochs: int = 1,
+        num_epochs: int = 100,
         batch_size: int = 2,
         num_workers: int = 0,
         shuffle: bool = True,
+        initial_lr: float = 3e-4,
+        weight_decay: float = 3e-5,
     ) -> None:
         super().__init__(dataset_id, fold, dataset_dir, preprocessed_dataset_dir)
         self.num_epochs = num_epochs
@@ -31,6 +33,8 @@ class mmTrainer(BaseTrainer):
         self.num_workers = num_workers
         self.shuffle = shuffle
         self.architecture_name = architecture_name
+        self.initial_lr = initial_lr
+        self.weight_decay = weight_decay
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.split_sample_ids = get_fold_sample_ids(preprocessed_dataset_dir, fold)
         self._train_dataset = None
@@ -61,6 +65,8 @@ class mmTrainer(BaseTrainer):
         print(f"Optimizer: {optimizer.__class__.__name__}")
         print(f"Scheduler: {scheduler.__class__.__name__}")
         print(f"Epochs: {self.num_epochs}")
+        print(f"Initial LR: {self.initial_lr}")
+        print(f"Weight decay: {self.weight_decay}")
 
         for epoch_idx in range(1, self.num_epochs + 1):
             print(f"Epoch {epoch_idx}/{self.num_epochs}")
@@ -68,6 +74,7 @@ class mmTrainer(BaseTrainer):
                 self.train_step(batch, batch_idx)
             for batch_idx, batch in enumerate(val_dataloader, start=1):
                 self.validate_step(batch, batch_idx)
+            scheduler.step()
 
         print("DONE")
 
@@ -135,16 +142,21 @@ class mmTrainer(BaseTrainer):
                 parameter = nn.Parameter(
                     torch.zeros(1, requires_grad=True, device=self.device)
                 )
-            self._optimizer = torch.optim.SGD([parameter], lr=0.01)
+            self._optimizer = torch.optim.SGD(
+                [parameter],
+                lr=self.initial_lr,
+                weight_decay=self.weight_decay,
+                momentum=0.99,
+                nesterov=True,
+            )
         return self._optimizer
 
     def get_scheduler(self):
         if self._scheduler is None:
             optimizer = self.get_optimizer()
-            self._scheduler = torch.optim.lr_scheduler.ConstantLR(
+            self._scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                 optimizer,
-                factor=1.0,
-                total_iters=1,
+                T_max=self.num_epochs,
             )
         return self._scheduler
 
