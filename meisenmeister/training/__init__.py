@@ -4,11 +4,15 @@ from .registry import (
     get_trainer_class,
     get_trainer_registry,
 )
+from .splits import create_five_fold_splits, get_fold_sample_ids, load_splits
 from .train import train
 from .trainers.mm_trainer import mmTrainer
 
 __all__ = [
     "BaseTrainer",
+    "create_five_fold_splits",
+    "get_fold_sample_ids",
+    "load_splits",
     "mmTrainer",
     "get_available_trainer_names",
     "get_trainer_class",

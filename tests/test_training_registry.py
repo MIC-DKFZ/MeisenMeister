@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from meisenmeister.training import BaseTrainer, get_trainer_class, get_trainer_registry
 from meisenmeister.training.trainers.mm_trainer import mmTrainer
@@ -31,12 +32,19 @@ class TrainingRegistryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             with self.assertRaises(TypeError):
-                BaseTrainer("001", root, root)
+                BaseTrainer("001", 0, root, root)
 
     def test_default_trainer_satisfies_base_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            trainer = mmTrainer("001", root, root)
+            with patch(
+                "meisenmeister.training.trainers.mm_trainer.get_fold_sample_ids",
+                return_value={
+                    "train": ["case_001_left", "case_001_right"],
+                    "val": ["case_002_left", "case_002_right"],
+                },
+            ):
+                trainer = mmTrainer("001", 0, root, root)
 
         self.assertIsInstance(trainer, BaseTrainer)
 

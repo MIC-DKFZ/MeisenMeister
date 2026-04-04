@@ -41,8 +41,15 @@ def _parse_sample_id(path: Path) -> tuple[str, str, str]:
 
 
 class MeisenmeisterROIDataset(Dataset):
-    def __init__(self, preprocessed_dataset_dir: Path):
+    def __init__(
+        self,
+        preprocessed_dataset_dir: Path,
+        allowed_sample_ids: set[str] | None = None,
+        allowed_case_ids: set[str] | None = None,
+    ):
         self.preprocessed_dataset_dir = preprocessed_dataset_dir
+        self.allowed_sample_ids = allowed_sample_ids
+        self.allowed_case_ids = allowed_case_ids
         self.plans = _load_json(preprocessed_dataset_dir / "mmPlans.json")
         self.labels = _load_json(preprocessed_dataset_dir / "labelsTr.json")
         self.data_dir = preprocessed_dataset_dir / self.plans["output_folder_name"]
@@ -57,6 +64,16 @@ class MeisenmeisterROIDataset(Dataset):
         samples = []
         for path in sorted(self.data_dir.glob("*.b2nd")):
             sample_id, case_id, roi_name = _parse_sample_id(path)
+            if (
+                self.allowed_sample_ids is not None
+                and sample_id not in self.allowed_sample_ids
+            ):
+                continue
+            if (
+                self.allowed_case_ids is not None
+                and case_id not in self.allowed_case_ids
+            ):
+                continue
             if sample_id not in self.labels:
                 raise KeyError(
                     f"Missing label for sample '{sample_id}' in labelsTr.json"

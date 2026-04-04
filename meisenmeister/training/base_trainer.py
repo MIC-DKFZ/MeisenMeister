@@ -8,10 +8,12 @@ class BaseTrainer(ABC):
     def __init__(
         self,
         dataset_id: str,
+        fold: int,
         dataset_dir: Path,
         preprocessed_dataset_dir: Path,
     ) -> None:
         self.dataset_id = dataset_id
+        self.fold = fold
         self.dataset_dir = dataset_dir
         self.preprocessed_dataset_dir = preprocessed_dataset_dir
 
@@ -28,12 +30,20 @@ class BaseTrainer(ABC):
         """Return the loss function used by this trainer."""
 
     @abstractmethod
-    def get_dataset(self):
-        """Return the dataset instance used by this trainer."""
+    def get_train_dataset(self):
+        """Return the training dataset instance used by this trainer."""
 
     @abstractmethod
-    def get_dataloader(self):
-        """Return the dataloader used by this trainer."""
+    def get_val_dataset(self):
+        """Return the validation dataset instance used by this trainer."""
+
+    @abstractmethod
+    def get_train_dataloader(self):
+        """Return the training dataloader used by this trainer."""
+
+    @abstractmethod
+    def get_val_dataloader(self):
+        """Return the validation dataloader used by this trainer."""
 
     @abstractmethod
     def get_optimizer(self):

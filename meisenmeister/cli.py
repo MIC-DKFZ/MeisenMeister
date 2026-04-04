@@ -10,7 +10,13 @@ from meisenmeister.plan_and_preprocess.homogenize import homogenize
 from meisenmeister.plan_and_preprocess.plan_and_preprocess import plan_and_preprocess
 from meisenmeister.plan_and_preprocess.plan_experiment import plan_experiment
 from meisenmeister.plan_and_preprocess.preprocess import preprocess
+from meisenmeister.training.splits import create_five_fold_splits
 from meisenmeister.training.train import train
+from meisenmeister.utils import (
+    find_dataset_dir,
+    require_global_paths_set,
+    verify_required_global_paths_set,
+)
 
 
 def mm_extract_dataset_fingerprint() -> None:
@@ -140,12 +146,44 @@ def mm_train() -> None:
         help="Integer dataset identifier.",
     )
     parser.add_argument(
+        "-f",
+        "--fold",
+        type=int,
+        required=True,
+        help="Fold index from splits.json.",
+    )
+    parser.add_argument(
         "--trainer",
         default="mmTrainer",
         help="Trainer class name registered under meisenmeister.training.trainers.",
     )
     args = parser.parse_args()
-    train(args.d, trainer_name=args.trainer)
+    train(args.d, fold=args.fold, trainer_name=args.trainer)
+
+
+@require_global_paths_set
+def mm_create_5fold() -> None:
+    parser = argparse.ArgumentParser(
+        prog="mm_create_5fold",
+        description="Create a leakage-safe 5-fold splits.json in the preprocessed dataset folder.",
+    )
+    parser.add_argument(
+        "-d",
+        type=int,
+        required=True,
+        help="Integer dataset identifier.",
+    )
+    args = parser.parse_args()
+
+    if not 0 <= args.d <= 999:
+        raise ValueError(f"Dataset id must be between 0 and 999, got {args.d}")
+
+    dataset_id = f"{args.d:03d}"
+    paths = verify_required_global_paths_set()
+    dataset_dir = find_dataset_dir(paths["mm_raw"], dataset_id)
+    preprocessed_dataset_dir = paths["mm_preprocessed"] / dataset_dir.name
+    output_path = create_five_fold_splits(preprocessed_dataset_dir)
+    print(output_path)
 
 
 if __name__ == "__main__":

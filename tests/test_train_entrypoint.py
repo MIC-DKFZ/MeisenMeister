@@ -13,9 +13,14 @@ class _MockTrainer:
     last_instance = None
 
     def __init__(
-        self, dataset_id: str, dataset_dir: Path, preprocessed_dataset_dir: Path
+        self,
+        dataset_id: str,
+        fold: int,
+        dataset_dir: Path,
+        preprocessed_dataset_dir: Path,
     ):
         self.dataset_id = dataset_id
+        self.fold = fold
         self.dataset_dir = dataset_dir
         self.preprocessed_dataset_dir = preprocessed_dataset_dir
         self.fit_called = False
@@ -48,15 +53,27 @@ class TrainEntrypointTests(unittest.TestCase):
                     return_value=dataset_dir,
                 ),
                 patch(
+                    "meisenmeister.training.train.get_fold_sample_ids",
+                    return_value={
+                        "train": ["case_001_left", "case_001_right"],
+                        "val": ["case_002_left", "case_002_right"],
+                    },
+                ) as mock_get_fold_sample_ids,
+                patch(
                     "meisenmeister.training.train.get_trainer_class",
                     return_value=_MockTrainer,
                 ) as mock_get_trainer_class,
             ):
-                train_module.train(1, trainer_name="mmTrainer_Debug")
+                train_module.train(1, fold=0, trainer_name="mmTrainer_Debug")
 
+        mock_get_fold_sample_ids.assert_called_once_with(
+            preprocessed_root / dataset_dir.name,
+            0,
+        )
         mock_get_trainer_class.assert_called_once_with("mmTrainer_Debug")
         self.assertIsNotNone(_MockTrainer.last_instance)
         self.assertEqual(_MockTrainer.last_instance.dataset_id, "001")
+        self.assertEqual(_MockTrainer.last_instance.fold, 0)
         self.assertEqual(_MockTrainer.last_instance.dataset_dir, dataset_dir)
         self.assertEqual(
             _MockTrainer.last_instance.preprocessed_dataset_dir,

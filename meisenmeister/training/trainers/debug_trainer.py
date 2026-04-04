@@ -4,9 +4,10 @@ from meisenmeister.training.trainers.mm_trainer import mmTrainer
 
 
 class mmTrainer_Debug(mmTrainer):
-    def __init__(self, dataset_id, dataset_dir, preprocessed_dataset_dir) -> None:
+    def __init__(self, dataset_id, fold, dataset_dir, preprocessed_dataset_dir) -> None:
         super().__init__(
             dataset_id=dataset_id,
+            fold=fold,
             dataset_dir=dataset_dir,
             preprocessed_dataset_dir=preprocessed_dataset_dir,
             num_epochs=2,
