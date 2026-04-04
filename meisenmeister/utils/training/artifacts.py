@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import logging
 import math
+import sys
 from pathlib import Path
 
 import matplotlib
 
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt
+
+_LOGGER_CACHE: dict[Path, logging.Logger] = {}
 
 
 def build_experiment_paths(
@@ -49,9 +53,59 @@ def prepare_output_dir(
 
 
 def log_message(message: str, log_path: Path) -> None:
-    print(message)
-    with log_path.open("a", encoding="utf-8") as file:
-        file.write(f"{message}\n")
+    logger = _get_training_logger(log_path)
+    if message.startswith("WARNING:"):
+        logger.warning(message)
+        return
+    logger.info(message)
+
+
+def _get_training_logger(log_path: Path) -> logging.Logger:
+    resolved_path = log_path.resolve()
+    logger = _LOGGER_CACHE.get(resolved_path)
+    if logger is None:
+        logger_name = "meisenmeister.training." + str(resolved_path).replace(
+            "/", "."
+        ).replace(":", "_")
+        logger = logging.getLogger(logger_name)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        _LOGGER_CACHE[resolved_path] = logger
+
+    needs_reconfigure = True
+    if len(logger.handlers) == 2:
+        stream_handler, file_handler = logger.handlers
+        stream_matches = (
+            isinstance(stream_handler, logging.StreamHandler)
+            and getattr(stream_handler, "stream", None) is sys.stdout
+        )
+        file_matches = (
+            isinstance(file_handler, logging.FileHandler)
+            and Path(file_handler.baseFilename) == resolved_path
+        )
+        needs_reconfigure = not (stream_matches and file_matches)
+
+    if needs_reconfigure:
+        for handler in logger.handlers[:]:
+            handler.close()
+            logger.removeHandler(handler)
+
+        formatter = logging.Formatter(
+            fmt="%(asctime)s | %(levelname)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+
+        stream_handler = logging.StreamHandler(sys.stdout)
+        stream_handler.setLevel(logging.INFO)
+        stream_handler.setFormatter(formatter)
+        logger.addHandler(stream_handler)
+
+        file_handler = logging.FileHandler(resolved_path, mode="a", encoding="utf-8")
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+    return logger
 
 
 def format_metric(value: float) -> str:
