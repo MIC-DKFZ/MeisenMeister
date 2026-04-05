@@ -6,6 +6,7 @@ from .spatial_transforms import (
     RandomRotation3D,
     RandomScaling3D,
     RandomShiftWithinMargin3D,
+    RemoveMargin3D,
 )
 
 __all__ = [
@@ -17,6 +18,7 @@ __all__ = [
     "RandomRotation3D",
     "RandomScaling3D",
     "RandomShiftWithinMargin3D",
+    "RemoveMargin3D",
     "SampleTransform3D",
     "apply_augmentations",
 ]

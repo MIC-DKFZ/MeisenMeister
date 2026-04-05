@@ -104,6 +104,34 @@ class RandomShiftWithinMargin3D:
         return {**sample, "image": shifted_image}
 
 
+class RemoveMargin3D:
+    def __init__(self, margin_voxels: Sequence[int]) -> None:
+        if len(margin_voxels) != 3:
+            raise ValueError(
+                "RemoveMargin3D margin_voxels must contain exactly three values"
+            )
+
+        normalized_margins = tuple(int(axis) for axis in margin_voxels)
+        if any(axis < 0 for axis in normalized_margins):
+            raise ValueError("RemoveMargin3D margin_voxels values must be non-negative")
+
+        self.margin_voxels = normalized_margins
+
+    def __call__(self, sample: dict) -> dict:
+        image = sample["image"]
+        mask = np.zeros(image.shape[1:], dtype=image.dtype)
+
+        center_slices = []
+        for axis_size, margin in zip(mask.shape, self.margin_voxels, strict=True):
+            start = min(margin, axis_size)
+            stop = max(start, axis_size - margin)
+            center_slices.append(slice(start, stop))
+
+        mask[tuple(center_slices)] = 1
+        masked_image = image * mask[None, ...]
+        return {**sample, "image": masked_image.astype(image.dtype, copy=False)}
+
+
 def _resample_channel_with_scale(channel: np.ndarray, scale: float) -> np.ndarray:
     depth, height, width = channel.shape
     center = (np.asarray(channel.shape, dtype=np.float32) - 1.0) / 2.0

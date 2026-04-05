@@ -42,6 +42,10 @@ class BaseTrainer(ABC):
         """Return the validation dataset instance used by this trainer."""
 
     @abstractmethod
+    def get_val_augmentation_pipeline(self):
+        """Return the augmentation pipeline used for validation samples."""
+
+    @abstractmethod
     def get_train_dataloader(self):
         """Return the training dataloader used by this trainer."""
 

@@ -19,6 +19,7 @@ from meisenmeister.data_augmentations import (
     RandomRotation3D,
     RandomScaling3D,
     RandomShiftWithinMargin3D,
+    RemoveMargin3D,
     apply_augmentations,
 )
 from meisenmeister.dataloading import MeisenmeisterROIDataset
@@ -214,6 +215,43 @@ class DataAugmentationTests(unittest.TestCase):
         self.assertEqual(output["image"].shape, sample["image"].shape)
         self.assertFalse(np.array_equal(output["image"], sample["image"]))
         self.assertGreater(float(output["image"][0, 0, 0, 0]), 0.0)
+
+    def test_remove_margin3d_rejects_invalid_margin_shape(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must contain exactly three values"):
+            RemoveMargin3D(margin_voxels=(1, 1))
+
+    def test_remove_margin3d_rejects_negative_margin(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must be non-negative"):
+            RemoveMargin3D(margin_voxels=(1, -1, 0))
+
+    def test_remove_margin3d_zero_margin_leaves_image_unchanged(self) -> None:
+        sample = self._make_sample()
+
+        output = RemoveMargin3D(margin_voxels=(0, 0, 0))(sample)
+
+        self.assertTrue(np.array_equal(output["image"], sample["image"]))
+
+    def test_remove_margin3d_removes_outer_border_and_preserves_shape(self) -> None:
+        sample = {
+            "image": np.arange(64, dtype=np.float32).reshape(1, 4, 4, 4),
+        }
+
+        output = RemoveMargin3D(margin_voxels=(1, 1, 1))(sample)
+
+        expected = np.zeros((1, 4, 4, 4), dtype=np.float32)
+        expected[:, 1:3, 1:3, 1:3] = sample["image"][:, 1:3, 1:3, 1:3]
+        self.assertTrue(np.array_equal(output["image"], expected))
+        self.assertEqual(output["image"].shape, sample["image"].shape)
+
+    def test_remove_margin3d_large_margins_zero_pad_without_shape_errors(self) -> None:
+        sample = {
+            "image": np.arange(8, dtype=np.float32).reshape(1, 2, 2, 2),
+        }
+
+        output = RemoveMargin3D(margin_voxels=(2, 2, 2))(sample)
+
+        self.assertTrue(np.array_equal(output["image"], np.zeros_like(sample["image"])))
+        self.assertEqual(output["image"].shape, sample["image"].shape)
 
     def test_random_rotation3d_probability_zero_never_changes_image(self) -> None:
         sample = self._make_sample()
@@ -693,7 +731,9 @@ class DatasetAugmentationIntegrationTests(unittest.TestCase):
         self.assertEqual(sample["case_id"], "case_000")
         self.assertEqual(sample["roi_name"], "left")
 
-    def test_mm_trainer_uses_augmentation_pipeline_for_train_only(self) -> None:
+    def test_mm_trainer_uses_distinct_train_and_val_augmentation_pipelines(
+        self,
+    ) -> None:
         with (
             patch(
                 "meisenmeister.training.trainers.mm_trainer.get_fold_sample_ids",
@@ -706,6 +746,11 @@ class DatasetAugmentationIntegrationTests(unittest.TestCase):
                 mmTrainer,
                 "get_train_augmentation_pipeline",
                 return_value=Compose3D([FlipAxes3D(probability=1.0, axes=(0, 1, 2))]),
+            ),
+            patch.object(
+                mmTrainer,
+                "get_val_augmentation_pipeline",
+                return_value=Compose3D([RemoveMargin3D(margin_voxels=(1, 1, 1))]),
             ),
         ):
             trainer = mmTrainer(
@@ -721,7 +766,7 @@ class DatasetAugmentationIntegrationTests(unittest.TestCase):
             val_sample = trainer.get_val_dataset()[0]
 
         expected_train = torch.flip(torch.from_numpy(self.base_array), dims=(1, 2, 3))
-        expected_val = torch.from_numpy(self.base_array + 10.0)
+        expected_val = torch.zeros_like(torch.from_numpy(self.base_array + 10.0))
         self.assertTrue(torch.equal(train_sample["image"], expected_train))
         self.assertTrue(torch.equal(val_sample["image"], expected_val))
 
@@ -746,3 +791,29 @@ class DatasetAugmentationIntegrationTests(unittest.TestCase):
 
         self.assertIsInstance(pipeline.augmentations[0], RandomShiftWithinMargin3D)
         self.assertEqual(pipeline.augmentations[0].max_shift_voxels, (10, 10, 10))
+
+    def test_mm_trainer_uses_validation_margin_removal_pipeline(self) -> None:
+        with patch(
+            "meisenmeister.training.trainers.mm_trainer.get_fold_sample_ids",
+            return_value={
+                "train": ["case_000_left"],
+                "val": ["case_001_left"],
+            },
+        ):
+            trainer = mmTrainer(
+                dataset_id="001",
+                fold=0,
+                dataset_dir=self.root / "Dataset_001_Test",
+                preprocessed_dataset_dir=self.preprocessed_dataset_dir,
+                results_dir=self.root / "results",
+                shuffle=False,
+            )
+
+        pipeline = trainer.get_val_augmentation_pipeline()
+        val_sample = trainer.get_val_dataset()[0]
+
+        self.assertIsInstance(pipeline.augmentations[0], RemoveMargin3D)
+        self.assertEqual(pipeline.augmentations[0].margin_voxels, (10, 10, 10))
+        self.assertTrue(
+            torch.equal(val_sample["image"], torch.zeros_like(val_sample["image"]))
+        )

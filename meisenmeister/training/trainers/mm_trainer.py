@@ -13,6 +13,7 @@ from meisenmeister.data_augmentations import (
     Compose3D,
     FlipAxes3D,
     RandomShiftWithinMargin3D,
+    RemoveMargin3D,
 )
 from meisenmeister.dataloading import MeisenmeisterROIDataset
 from meisenmeister.training.base_trainer import BaseTrainer
@@ -94,6 +95,7 @@ class mmTrainer(BaseTrainer):
         self._optimizer = None
         self._scheduler = None
         self._train_augmentation_pipeline = None
+        self._val_augmentation_pipeline = None
         self._plans = None
         self._history = create_empty_history()
         self._best_state = {
@@ -359,6 +361,7 @@ class mmTrainer(BaseTrainer):
             self._val_dataset = MeisenmeisterROIDataset(
                 self.preprocessed_dataset_dir,
                 allowed_sample_ids=set(self.split_sample_ids["val"]),
+                augmentation_pipeline=self.get_val_augmentation_pipeline(),
             )
         return self._val_dataset
 
@@ -383,6 +386,22 @@ class mmTrainer(BaseTrainer):
                 ]
             )
         return self._train_augmentation_pipeline
+
+    def get_val_augmentation_pipeline(self):
+        if self._val_augmentation_pipeline is None:
+            plans = self.get_preprocessing_plans()
+            margin_voxels = tuple(
+                int(margin_axis / spacing_axis)
+                for margin_axis, spacing_axis in zip(
+                    plans["margin_mm"],
+                    plans["target_spacing"],
+                    strict=True,
+                )
+            )
+            self._val_augmentation_pipeline = Compose3D(
+                [RemoveMargin3D(margin_voxels=margin_voxels)]
+            )
+        return self._val_augmentation_pipeline
 
     def get_preprocessing_plans(self) -> dict:
         if self._plans is None:
