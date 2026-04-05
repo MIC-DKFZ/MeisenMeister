@@ -31,6 +31,7 @@ from meisenmeister.utils.training import (
     log_message,
     prepare_output_dir,
     restore_checkpoint_payload,
+    run_final_validation_evaluation,
     save_checkpoint,
     save_training_curves,
     should_update_best,
@@ -41,6 +42,9 @@ from meisenmeister.utils.training import (
 class mmTrainer(BaseTrainer):
     EMA_ALPHA = 0.1
     BEST_SCORE_TOLERANCE = 1e-12
+    FINAL_EVAL_N_BOOTSTRAP = 2000
+    FINAL_EVAL_CONFIDENCE_LEVEL = 0.95
+    FINAL_EVAL_BOOTSTRAP_SEED = 0
 
     def __init__(
         self,
@@ -87,6 +91,7 @@ class mmTrainer(BaseTrainer):
         self.log_path = experiment_paths["log_path"]
         self.last_checkpoint_path = experiment_paths["last_checkpoint_path"]
         self.best_checkpoint_path = experiment_paths["best_checkpoint_path"]
+        self.eval_last_path = experiment_paths["eval_last_path"]
         self.plot_path = experiment_paths["plot_path"]
         self._train_dataset = None
         self._val_dataset = None
@@ -178,6 +183,15 @@ class mmTrainer(BaseTrainer):
             log_message(
                 f"Training already completed through epoch {start_epoch - 1}; nothing to do.",
                 self.log_path,
+            )
+            run_final_validation_evaluation(
+                self,
+                output_path=self.eval_last_path,
+                log_path=self.log_path,
+                n_bootstrap=self.FINAL_EVAL_N_BOOTSTRAP,
+                confidence_level=self.FINAL_EVAL_CONFIDENCE_LEVEL,
+                seed=self.FINAL_EVAL_BOOTSTRAP_SEED,
+                log_fn=log_message,
             )
             log_message("DONE", self.log_path)
             return
@@ -323,6 +337,15 @@ class mmTrainer(BaseTrainer):
             )
             save_training_curves(self._history, self.plot_path)
 
+        run_final_validation_evaluation(
+            self,
+            output_path=self.eval_last_path,
+            log_path=self.log_path,
+            n_bootstrap=self.FINAL_EVAL_N_BOOTSTRAP,
+            confidence_level=self.FINAL_EVAL_CONFIDENCE_LEVEL,
+            seed=self.FINAL_EVAL_BOOTSTRAP_SEED,
+            log_fn=log_message,
+        )
         log_message("DONE", self.log_path)
 
     def get_architecture(self):
@@ -498,4 +521,7 @@ class mmTrainer(BaseTrainer):
             "labels": labels.detach().cpu(),
             "predictions": predictions.detach().cpu(),
             "probabilities": probabilities.detach().cpu(),
+            "sample_ids": list(batch["sample_id"]),
+            "case_ids": list(batch["case_id"]),
+            "roi_names": list(batch["roi_name"]),
         }

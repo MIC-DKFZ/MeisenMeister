@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import math
 import tempfile
 import unittest
@@ -13,6 +14,10 @@ from torch.utils.data import DataLoader, Dataset
 
 from meisenmeister.architectures import BaseArchitecture
 from meisenmeister.training.trainers.mm_trainer import mmTrainer
+from meisenmeister.utils.training import (
+    build_final_validation_evaluation,
+    compute_stratified_bootstrap_interval,
+)
 
 
 class _TinyROIDataset(Dataset):
@@ -92,6 +97,37 @@ class MMTrainerTests(unittest.TestCase):
         trainer._scheduler = None
         return trainer
 
+    def _make_validation_metrics(
+        self,
+        *,
+        loss: float,
+        labels: list[int],
+        predictions: list[int],
+        probabilities: list[list[float]],
+        sample_ids: list[str] | None = None,
+    ) -> dict:
+        resolved_sample_ids = sample_ids or [
+            f"case_{index + 2:03d}_left" for index in range(len(labels))
+        ]
+        return {
+            "loss": float(loss),
+            "num_samples": len(labels),
+            "num_correct": sum(
+                int(prediction == label)
+                for prediction, label in zip(predictions, labels, strict=True)
+            ),
+            "labels": torch.tensor(labels),
+            "predictions": torch.tensor(predictions),
+            "probabilities": torch.tensor(probabilities, dtype=torch.float32),
+            "sample_ids": resolved_sample_ids,
+            "case_ids": [
+                sample_id.rsplit("_", 1)[0] for sample_id in resolved_sample_ids
+            ],
+            "roi_names": [
+                sample_id.rsplit("_", 1)[1] for sample_id in resolved_sample_ids
+            ],
+        }
+
     def test_get_optimizer_uses_model_parameters(self) -> None:
         trainer = self._make_trainer()
 
@@ -138,6 +174,9 @@ class MMTrainerTests(unittest.TestCase):
         self.assertLessEqual(metrics["num_correct"], 2)
         self.assertEqual(tuple(metrics["labels"].shape), (2,))
         self.assertEqual(tuple(metrics["probabilities"].shape), (2, 2))
+        self.assertEqual(metrics["sample_ids"], ["case_000_left", "case_001_left"])
+        self.assertEqual(metrics["case_ids"], ["case_000", "case_001"])
+        self.assertEqual(metrics["roi_names"], ["left", "left"])
         for parameter in trainer.get_architecture().parameters():
             self.assertIsNone(parameter.grad)
 
@@ -153,22 +192,24 @@ class MMTrainerTests(unittest.TestCase):
             {"loss": 0.7, "num_samples": 2, "num_correct": 2},
         ]
         validate_step_metrics = [
-            {
-                "loss": 0.6,
-                "num_samples": 2,
-                "num_correct": 2,
-                "labels": torch.tensor([0, 1]),
-                "predictions": torch.tensor([0, 1]),
-                "probabilities": torch.tensor([[0.9, 0.1], [0.1, 0.9]]),
-            },
-            {
-                "loss": 0.5,
-                "num_samples": 2,
-                "num_correct": 2,
-                "labels": torch.tensor([0, 1]),
-                "predictions": torch.tensor([0, 1]),
-                "probabilities": torch.tensor([[0.95, 0.05], [0.05, 0.95]]),
-            },
+            self._make_validation_metrics(
+                loss=0.6,
+                labels=[0, 1],
+                predictions=[0, 1],
+                probabilities=[[0.9, 0.1], [0.1, 0.9]],
+            ),
+            self._make_validation_metrics(
+                loss=0.5,
+                labels=[0, 1],
+                predictions=[0, 1],
+                probabilities=[[0.95, 0.05], [0.05, 0.95]],
+            ),
+            self._make_validation_metrics(
+                loss=0.5,
+                labels=[0, 1],
+                predictions=[0, 1],
+                probabilities=[[0.95, 0.05], [0.05, 0.95]],
+            ),
         ]
 
         with (
@@ -185,7 +226,9 @@ class MMTrainerTests(unittest.TestCase):
         self.assertTrue(trainer.log_path.is_file())
         self.assertTrue(trainer.last_checkpoint_path.is_file())
         self.assertTrue(trainer.best_checkpoint_path.is_file())
+        self.assertTrue(trainer.eval_last_path.is_file())
         self.assertTrue(trainer.plot_path.is_file())
+        eval_payload = json.loads(trainer.eval_last_path.read_text(encoding="utf-8"))
 
         checkpoint = torch.load(
             trainer.last_checkpoint_path,
@@ -202,6 +245,12 @@ class MMTrainerTests(unittest.TestCase):
         self.assertIn("Saved new best model at epoch 2", trainer.log_path.read_text())
         self.assertIsNone(checkpoint["trainer_config"]["source_weights_path"])
         self.assertIsNone(checkpoint["trainer_config"]["experiment_postfix"])
+        self.assertEqual(
+            set(eval_payload["predictions"]), {"case_002_left", "case_003_left"}
+        )
+        self.assertEqual(eval_payload["summary"]["num_samples"], 2)
+        self.assertEqual(eval_payload["summary"]["balanced_accuracy"], 1.0)
+        self.assertEqual(eval_payload["summary"]["macro_auc"], 1.0)
 
     def test_experiment_postfix_changes_experiment_directory_name(self) -> None:
         trainer = self._make_trainer(experiment_postfix="finetuningNNSSL")
@@ -238,14 +287,12 @@ class MMTrainerTests(unittest.TestCase):
             patch.object(
                 trainer,
                 "validate_step",
-                return_value={
-                    "loss": 0.7,
-                    "num_samples": 2,
-                    "num_correct": 2,
-                    "labels": torch.tensor([0, 0]),
-                    "predictions": torch.tensor([0, 0]),
-                    "probabilities": torch.tensor([[0.9, 0.1], [0.8, 0.2]]),
-                },
+                return_value=self._make_validation_metrics(
+                    loss=0.7,
+                    labels=[0, 0],
+                    predictions=[0, 0],
+                    probabilities=[[0.9, 0.1], [0.8, 0.2]],
+                ),
             ),
         ):
             trainer.fit()
@@ -297,14 +344,18 @@ class MMTrainerTests(unittest.TestCase):
 
         initial_train_step_metrics = [{"loss": 0.8, "num_samples": 2, "num_correct": 1}]
         initial_validate_step_metrics = [
-            {
-                "loss": 0.6,
-                "num_samples": 2,
-                "num_correct": 2,
-                "labels": torch.tensor([0, 1]),
-                "predictions": torch.tensor([0, 1]),
-                "probabilities": torch.tensor([[0.9, 0.1], [0.1, 0.9]]),
-            }
+            self._make_validation_metrics(
+                loss=0.6,
+                labels=[0, 1],
+                predictions=[0, 1],
+                probabilities=[[0.9, 0.1], [0.1, 0.9]],
+            ),
+            self._make_validation_metrics(
+                loss=0.6,
+                labels=[0, 1],
+                predictions=[0, 1],
+                probabilities=[[0.9, 0.1], [0.1, 0.9]],
+            ),
         ]
 
         with (
@@ -328,14 +379,18 @@ class MMTrainerTests(unittest.TestCase):
         resumed_trainer = self._make_trainer(continue_training=True, num_epochs=2)
         resumed_train_step_metrics = [{"loss": 0.4, "num_samples": 2, "num_correct": 2}]
         resumed_validate_step_metrics = [
-            {
-                "loss": 0.4,
-                "num_samples": 2,
-                "num_correct": 2,
-                "labels": torch.tensor([0, 1]),
-                "predictions": torch.tensor([0, 1]),
-                "probabilities": torch.tensor([[0.98, 0.02], [0.02, 0.98]]),
-            }
+            self._make_validation_metrics(
+                loss=0.4,
+                labels=[0, 1],
+                predictions=[0, 1],
+                probabilities=[[0.98, 0.02], [0.02, 0.98]],
+            ),
+            self._make_validation_metrics(
+                loss=0.4,
+                labels=[0, 1],
+                predictions=[0, 1],
+                probabilities=[[0.98, 0.02], [0.02, 0.98]],
+            ),
         ]
 
         with (
@@ -391,14 +446,12 @@ class MMTrainerTests(unittest.TestCase):
             patch.object(
                 initial_trainer,
                 "validate_step",
-                return_value={
-                    "loss": 0.6,
-                    "num_samples": 2,
-                    "num_correct": 2,
-                    "labels": torch.tensor([0, 1]),
-                    "predictions": torch.tensor([0, 1]),
-                    "probabilities": torch.tensor([[0.9, 0.1], [0.1, 0.9]]),
-                },
+                return_value=self._make_validation_metrics(
+                    loss=0.6,
+                    labels=[0, 1],
+                    predictions=[0, 1],
+                    probabilities=[[0.9, 0.1], [0.1, 0.9]],
+                ),
             ),
         ):
             initial_trainer.fit()
@@ -423,14 +476,12 @@ class MMTrainerTests(unittest.TestCase):
             patch.object(
                 resumed_trainer,
                 "validate_step",
-                return_value={
-                    "loss": 0.4,
-                    "num_samples": 2,
-                    "num_correct": 2,
-                    "labels": torch.tensor([0, 1]),
-                    "predictions": torch.tensor([0, 1]),
-                    "probabilities": torch.tensor([[0.98, 0.02], [0.02, 0.98]]),
-                },
+                return_value=self._make_validation_metrics(
+                    loss=0.4,
+                    labels=[0, 1],
+                    predictions=[0, 1],
+                    probabilities=[[0.98, 0.02], [0.02, 0.98]],
+                ),
             ),
         ):
             resumed_trainer.fit()
@@ -464,14 +515,12 @@ class MMTrainerTests(unittest.TestCase):
             patch.object(
                 initial_trainer,
                 "validate_step",
-                return_value={
-                    "loss": 0.6,
-                    "num_samples": 2,
-                    "num_correct": 2,
-                    "labels": torch.tensor([0, 1]),
-                    "predictions": torch.tensor([0, 1]),
-                    "probabilities": torch.tensor([[0.9, 0.1], [0.1, 0.9]]),
-                },
+                return_value=self._make_validation_metrics(
+                    loss=0.6,
+                    labels=[0, 1],
+                    predictions=[0, 1],
+                    probabilities=[[0.9, 0.1], [0.1, 0.9]],
+                ),
             ),
         ):
             initial_trainer.fit()
@@ -494,14 +543,12 @@ class MMTrainerTests(unittest.TestCase):
             patch.object(
                 resumed_trainer,
                 "validate_step",
-                return_value={
-                    "loss": 0.4,
-                    "num_samples": 2,
-                    "num_correct": 2,
-                    "labels": torch.tensor([0, 1]),
-                    "predictions": torch.tensor([0, 1]),
-                    "probabilities": torch.tensor([[0.98, 0.02], [0.02, 0.98]]),
-                },
+                return_value=self._make_validation_metrics(
+                    loss=0.4,
+                    labels=[0, 1],
+                    predictions=[0, 1],
+                    probabilities=[[0.98, 0.02], [0.02, 0.98]],
+                ),
             ),
             patch("sys.stdout", new_callable=io.StringIO) as stdout,
         ):
@@ -540,14 +587,12 @@ class MMTrainerTests(unittest.TestCase):
             patch.object(
                 trainer,
                 "validate_step",
-                return_value={
-                    "loss": 0.7,
-                    "num_samples": 2,
-                    "num_correct": 2,
-                    "labels": torch.tensor([0, 0]),
-                    "predictions": torch.tensor([0, 0]),
-                    "probabilities": torch.tensor([[0.9, 0.1], [0.8, 0.2]]),
-                },
+                return_value=self._make_validation_metrics(
+                    loss=0.7,
+                    labels=[0, 0],
+                    predictions=[0, 0],
+                    probabilities=[[0.9, 0.1], [0.8, 0.2]],
+                ),
             ),
         ):
             trainer.fit()
@@ -557,8 +602,177 @@ class MMTrainerTests(unittest.TestCase):
             map_location="cpu",
             weights_only=False,
         )
+        eval_payload = json.loads(trainer.eval_last_path.read_text(encoding="utf-8"))
         self.assertTrue(math.isnan(checkpoint["history"]["val_macro_auc"][0]))
         self.assertIn("val_macro_auc undefined", trainer.log_path.read_text())
+        self.assertIsNone(eval_payload["summary"]["macro_auc"])
+        self.assertFalse(eval_payload["summary"]["macro_auc_defined"])
+        self.assertFalse(eval_payload["summary"]["macro_auc_ci"]["defined"])
+
+    def test_eval_last_uses_last_model_outputs_not_best_epoch_outputs(self) -> None:
+        trainer = self._make_trainer(num_epochs=2)
+        train_loader = [object()]
+        val_loader = [object()]
+        validate_step_metrics = [
+            self._make_validation_metrics(
+                loss=0.3,
+                labels=[0, 1],
+                predictions=[0, 1],
+                probabilities=[[0.99, 0.01], [0.01, 0.99]],
+            ),
+            self._make_validation_metrics(
+                loss=0.9,
+                labels=[0, 1],
+                predictions=[0, 0],
+                probabilities=[[0.9, 0.1], [0.9, 0.1]],
+            ),
+            self._make_validation_metrics(
+                loss=0.9,
+                labels=[0, 1],
+                predictions=[0, 0],
+                probabilities=[[0.9, 0.1], [0.9, 0.1]],
+            ),
+        ]
+
+        with (
+            patch.object(trainer, "get_train_dataloader", return_value=train_loader),
+            patch.object(trainer, "get_val_dataloader", return_value=val_loader),
+            patch.object(
+                trainer,
+                "train_step",
+                side_effect=[
+                    {"loss": 0.3, "num_samples": 2, "num_correct": 2},
+                    {"loss": 0.9, "num_samples": 2, "num_correct": 1},
+                ],
+            ),
+            patch.object(trainer, "validate_step", side_effect=validate_step_metrics),
+        ):
+            trainer.fit()
+
+        checkpoint = torch.load(
+            trainer.last_checkpoint_path,
+            map_location="cpu",
+            weights_only=False,
+        )
+        eval_payload = json.loads(trainer.eval_last_path.read_text(encoding="utf-8"))
+        self.assertEqual(checkpoint["best_state"]["epoch"], 1)
+        self.assertEqual(eval_payload["summary"]["balanced_accuracy"], 0.5)
+        self.assertEqual(eval_payload["predictions"]["case_003_left"]["prediction"], 0)
+
+    def test_completed_resume_recreates_missing_eval_last_json(self) -> None:
+        initial_trainer = self._make_trainer(num_epochs=1)
+        train_loader = [object()]
+        val_loader = [object()]
+
+        with (
+            patch.object(
+                initial_trainer, "get_train_dataloader", return_value=train_loader
+            ),
+            patch.object(
+                initial_trainer, "get_val_dataloader", return_value=val_loader
+            ),
+            patch.object(
+                initial_trainer,
+                "train_step",
+                return_value={"loss": 0.8, "num_samples": 2, "num_correct": 1},
+            ),
+            patch.object(
+                initial_trainer,
+                "validate_step",
+                return_value=self._make_validation_metrics(
+                    loss=0.6,
+                    labels=[0, 1],
+                    predictions=[0, 1],
+                    probabilities=[[0.9, 0.1], [0.1, 0.9]],
+                ),
+            ),
+        ):
+            initial_trainer.fit()
+
+        initial_trainer.eval_last_path.unlink()
+
+        resumed_trainer = self._make_trainer(continue_training=True, num_epochs=1)
+        with (
+            patch.object(
+                resumed_trainer, "get_val_dataloader", return_value=val_loader
+            ),
+            patch.object(
+                resumed_trainer,
+                "validate_step",
+                return_value=self._make_validation_metrics(
+                    loss=0.6,
+                    labels=[0, 1],
+                    predictions=[0, 1],
+                    probabilities=[[0.9, 0.1], [0.1, 0.9]],
+                ),
+            ),
+        ):
+            resumed_trainer.fit()
+
+        self.assertTrue(resumed_trainer.eval_last_path.is_file())
+        eval_payload = json.loads(
+            resumed_trainer.eval_last_path.read_text(encoding="utf-8")
+        )
+        self.assertEqual(eval_payload["summary"]["balanced_accuracy"], 1.0)
+
+    def test_build_final_validation_evaluation_formats_summary_and_predictions(
+        self,
+    ) -> None:
+        payload = build_final_validation_evaluation(
+            [
+                self._make_validation_metrics(
+                    loss=0.4,
+                    labels=[0, 1],
+                    predictions=[0, 1],
+                    probabilities=[[0.95, 0.05], [0.05, 0.95]],
+                    sample_ids=["case_002_left", "case_003_right"],
+                )
+            ],
+            n_bootstrap=32,
+            seed=7,
+        )
+
+        self.assertEqual(payload["summary"]["num_samples"], 2)
+        self.assertEqual(payload["summary"]["balanced_accuracy"], 1.0)
+        self.assertEqual(payload["predictions"]["case_002_left"]["case_id"], "case_002")
+        self.assertEqual(payload["predictions"]["case_003_right"]["roi_name"], "right")
+        self.assertTrue(payload["summary"]["balanced_accuracy_ci"]["defined"])
+        self.assertIsNotNone(payload["summary"]["balanced_accuracy_paper"])
+
+    def test_compute_stratified_bootstrap_interval_is_deterministic(self) -> None:
+        labels = torch.tensor([0, 0, 1, 1]).numpy()
+        predictions = torch.tensor([0, 0, 1, 1]).numpy()
+        probabilities = torch.tensor(
+            [[0.95, 0.05], [0.8, 0.2], [0.1, 0.9], [0.2, 0.8]],
+            dtype=torch.float32,
+        ).numpy()
+
+        first = compute_stratified_bootstrap_interval(
+            labels,
+            predictions,
+            probabilities,
+            metric_fn=lambda y_true, y_pred, _probs: float(
+                sum(int(a == b) for a, b in zip(y_true, y_pred, strict=True))
+            )
+            / len(y_true),
+            n_bootstrap=64,
+            confidence_level=0.95,
+            seed=11,
+        )
+        second = compute_stratified_bootstrap_interval(
+            labels,
+            predictions,
+            probabilities,
+            metric_fn=lambda y_true, y_pred, _probs: float(
+                sum(int(a == b) for a, b in zip(y_true, y_pred, strict=True))
+            )
+            / len(y_true),
+            n_bootstrap=64,
+            confidence_level=0.95,
+            seed=11,
+        )
+
+        self.assertEqual(first, second)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import torch
 from sklearn.metrics import balanced_accuracy_score, roc_auc_score
 
@@ -42,24 +43,106 @@ def aggregate_validation_classification_metrics(
         [metric["probabilities"] for metric in metrics],
         dim=0,
     ).numpy()
+    return compute_classification_metrics(labels, predictions, probabilities)
+
+
+def compute_classification_metrics(
+    labels: np.ndarray,
+    predictions: np.ndarray,
+    probabilities: np.ndarray,
+) -> tuple[float, float, bool]:
     balanced_accuracy = float(balanced_accuracy_score(labels, predictions))
     macro_auc = math.nan
     macro_auc_defined = True
     try:
-        macro_auc = float(
-            roc_auc_score(
-                labels,
-                probabilities,
-                average="macro",
-                multi_class="ovr",
-                labels=list(range(probabilities.shape[1])),
+        if probabilities.shape[1] == 2:
+            macro_auc = float(roc_auc_score(labels, probabilities[:, 1]))
+        else:
+            macro_auc = float(
+                roc_auc_score(
+                    labels,
+                    probabilities,
+                    average="macro",
+                    multi_class="ovr",
+                    labels=list(range(probabilities.shape[1])),
+                )
             )
-        )
     except ValueError:
         macro_auc_defined = False
     if math.isnan(macro_auc):
         macro_auc_defined = False
     return balanced_accuracy, macro_auc, macro_auc_defined
+
+
+def compute_stratified_bootstrap_interval(
+    labels: np.ndarray,
+    predictions: np.ndarray,
+    probabilities: np.ndarray,
+    *,
+    metric_fn,
+    n_bootstrap: int,
+    confidence_level: float,
+    seed: int,
+) -> dict[str, float | int | bool | None]:
+    if labels.size == 0:
+        raise ValueError("Cannot compute a bootstrap interval for an empty dataset")
+    if n_bootstrap < 1:
+        raise ValueError(f"n_bootstrap must be at least 1, got {n_bootstrap}")
+    if not 0.0 < confidence_level < 1.0:
+        raise ValueError(
+            f"confidence_level must be strictly between 0 and 1, got {confidence_level}"
+        )
+
+    rng = np.random.default_rng(seed)
+    unique_labels = np.unique(labels)
+    class_indices = [
+        np.flatnonzero(labels == class_label) for class_label in unique_labels
+    ]
+
+    bootstrap_values: list[float] = []
+    for _ in range(n_bootstrap):
+        sampled_indices = np.concatenate(
+            [
+                rng.choice(indices, size=len(indices), replace=True)
+                for indices in class_indices
+            ]
+        )
+        rng.shuffle(sampled_indices)
+        try:
+            metric_value = float(
+                metric_fn(
+                    labels[sampled_indices],
+                    predictions[sampled_indices],
+                    probabilities[sampled_indices],
+                )
+            )
+        except ValueError:
+            continue
+        if math.isnan(metric_value):
+            continue
+        bootstrap_values.append(metric_value)
+
+    if not bootstrap_values:
+        return {
+            "defined": False,
+            "confidence_level": float(confidence_level),
+            "lower": None,
+            "upper": None,
+            "n_bootstrap": int(n_bootstrap),
+            "n_valid_bootstrap": 0,
+        }
+
+    alpha = 1.0 - confidence_level
+    lower = float(np.percentile(bootstrap_values, 100.0 * alpha / 2.0))
+    upper = float(np.percentile(bootstrap_values, 100.0 * (1.0 - alpha / 2.0)))
+    return {
+        "defined": True,
+        "confidence_level": float(confidence_level),
+        "lower": lower,
+        "upper": upper,
+        "n_bootstrap": int(n_bootstrap),
+        "n_valid_bootstrap": len(bootstrap_values),
+    }
 
 
 def compute_ema(

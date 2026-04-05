@@ -178,6 +178,13 @@ def mm_train() -> None:
         "--postfix",
         help="Optional suffix appended to the experiment name.",
     )
+    parser.add_argument(
+        "--val",
+        nargs="?",
+        const="last",
+        choices=("last", "best"),
+        help="Skip training and run final validation only. `--val` uses model_last.pt and writes eval_last.json; `--val best` uses model_best.pt and writes eval_best.json.",
+    )
     args = parser.parse_args()
     train(
         args.d,
@@ -187,6 +194,7 @@ def mm_train() -> None:
         continue_training=args.continue_training,
         weights_path=args.weights,
         experiment_postfix=args.postfix,
+        val=args.val,
     )
 
 

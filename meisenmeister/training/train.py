@@ -1,10 +1,15 @@
 from pathlib import Path
 
+import torch
+
 from meisenmeister.training.registry import get_trainer_class
 from meisenmeister.training.splits import get_fold_sample_ids
 from meisenmeister.utils import (
+    build_experiment_paths,
     find_dataset_dir,
+    log_message,
     require_global_paths_set,
+    run_final_validation_evaluation,
     verify_required_global_paths_set,
 )
 
@@ -18,6 +23,7 @@ def train(
     continue_training: bool = False,
     weights_path: str | None = None,
     experiment_postfix: str | None = None,
+    val: str | None = None,
 ) -> None:
     if not 0 <= d <= 999:
         raise ValueError(f"Dataset id must be between 0 and 999, got {d}")
@@ -25,6 +31,12 @@ def train(
         raise ValueError(f"Fold must be non-negative, got {fold}")
     if continue_training and weights_path is not None:
         raise ValueError("Cannot use --continue-training and --weights together")
+    if val is not None and val not in {"last", "best"}:
+        raise ValueError(f"val must be one of ('last', 'best'), got {val!r}")
+    if val is not None and continue_training:
+        raise ValueError("Cannot use --val together with --continue-training")
+    if val is not None and weights_path is not None:
+        raise ValueError("Cannot use --val together with --weights")
 
     dataset_id = f"{d:03d}"
     paths = verify_required_global_paths_set()
@@ -48,4 +60,45 @@ def train(
         weights_path=None if weights_path is None else Path(weights_path),
         experiment_postfix=experiment_postfix,
     )
-    trainer.fit()
+    if val is None:
+        trainer.fit()
+        return
+
+    experiment_paths = build_experiment_paths(
+        results_dir=mm_results,
+        dataset_name=dataset_dir.name,
+        trainer_name=trainer_class.__name__,
+        architecture_name=architecture_name,
+        experiment_postfix=experiment_postfix,
+        fold=fold,
+    )
+    checkpoint_path = (
+        experiment_paths["last_checkpoint_path"]
+        if val == "last"
+        else experiment_paths["best_checkpoint_path"]
+    )
+    output_path = (
+        experiment_paths["eval_last_path"]
+        if val == "last"
+        else experiment_paths["eval_best_path"]
+    )
+    experiment_paths["fold_dir"].mkdir(parents=True, exist_ok=True)
+    checkpoint = torch.load(
+        checkpoint_path,
+        map_location="cpu",
+        weights_only=False,
+    )
+    trainer.get_architecture().load_state_dict(checkpoint["model_state_dict"])
+    log_message(
+        f"Loaded {'last' if val == 'last' else 'best'} checkpoint from {checkpoint_path}",
+        experiment_paths["log_path"],
+    )
+    run_final_validation_evaluation(
+        trainer,
+        output_path=output_path,
+        log_path=experiment_paths["log_path"],
+        n_bootstrap=getattr(trainer, "FINAL_EVAL_N_BOOTSTRAP", 2000),
+        confidence_level=getattr(trainer, "FINAL_EVAL_CONFIDENCE_LEVEL", 0.95),
+        seed=getattr(trainer, "FINAL_EVAL_BOOTSTRAP_SEED", 0),
+        log_fn=log_message,
+    )

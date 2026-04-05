@@ -33,6 +33,8 @@ def build_experiment_paths(
         "log_path": fold_dir / "train.log",
         "last_checkpoint_path": fold_dir / "model_last.pt",
         "best_checkpoint_path": fold_dir / "model_best.pt",
+        "eval_last_path": fold_dir / "eval_last.json",
+        "eval_best_path": fold_dir / "eval_best.json",
         "plot_path": fold_dir / "training_curves.png",
     }
 

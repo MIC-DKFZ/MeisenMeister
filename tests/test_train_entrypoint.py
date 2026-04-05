@@ -39,6 +39,16 @@ class _MockTrainer:
     def fit(self) -> None:
         self.fit_called = True
 
+    def get_architecture(self):
+        class _Arch:
+            def __init__(self, outer):
+                self.outer = outer
+
+            def load_state_dict(self, state_dict):
+                self.outer.loaded_state_dict = state_dict
+
+        return _Arch(self)
+
 
 class TrainEntrypointTests(unittest.TestCase):
     def test_train_resolves_and_runs_selected_trainer(self) -> None:
@@ -100,6 +110,124 @@ class TrainEntrypointTests(unittest.TestCase):
         self.assertIsNone(_MockTrainer.last_instance.weights_path)
         self.assertIsNone(_MockTrainer.last_instance.experiment_postfix)
         self.assertTrue(_MockTrainer.last_instance.fit_called)
+
+    def test_train_val_last_loads_last_checkpoint_and_runs_evaluation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            dataset_dir = root / "Dataset_001_Test"
+            preprocessed_root = root / "preprocessed"
+            dataset_dir.mkdir()
+            preprocessed_root.mkdir()
+
+            with (
+                patch(
+                    "meisenmeister.training.train.verify_required_global_paths_set",
+                    return_value={
+                        "mm_raw": root,
+                        "mm_preprocessed": preprocessed_root,
+                        "mm_results": root / "results",
+                    },
+                ),
+                patch(
+                    "meisenmeister.training.train.find_dataset_dir",
+                    return_value=dataset_dir,
+                ),
+                patch(
+                    "meisenmeister.training.train.get_fold_sample_ids",
+                    return_value={
+                        "train": ["case_001_left", "case_001_right"],
+                        "val": ["case_002_left", "case_002_right"],
+                    },
+                ),
+                patch(
+                    "meisenmeister.training.train.get_trainer_class",
+                    return_value=_MockTrainer,
+                ),
+                patch(
+                    "meisenmeister.training.train.torch.load",
+                    return_value={"model_state_dict": {"weight": 1}},
+                ) as mock_torch_load,
+                patch(
+                    "meisenmeister.training.train.run_final_validation_evaluation"
+                ) as mock_run_eval,
+            ):
+                train_module.train(
+                    1,
+                    fold=0,
+                    trainer_name="mmTrainer_Debug",
+                    architecture_name="ResNet3D18",
+                    val="last",
+                )
+
+        self.assertFalse(_MockTrainer.last_instance.fit_called)
+        mock_torch_load.assert_called_once()
+        self.assertIn(
+            "model_last.pt",
+            str(
+                mock_torch_load.call_args.kwargs["map_location"]
+                if False
+                else mock_torch_load.call_args.args[0]
+            ),
+        )
+        self.assertEqual(_MockTrainer.last_instance.loaded_state_dict, {"weight": 1})
+        self.assertIn(
+            "eval_last.json", str(mock_run_eval.call_args.kwargs["output_path"])
+        )
+
+    def test_train_val_best_loads_best_checkpoint_and_runs_evaluation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            dataset_dir = root / "Dataset_001_Test"
+            preprocessed_root = root / "preprocessed"
+            dataset_dir.mkdir()
+            preprocessed_root.mkdir()
+
+            with (
+                patch(
+                    "meisenmeister.training.train.verify_required_global_paths_set",
+                    return_value={
+                        "mm_raw": root,
+                        "mm_preprocessed": preprocessed_root,
+                        "mm_results": root / "results",
+                    },
+                ),
+                patch(
+                    "meisenmeister.training.train.find_dataset_dir",
+                    return_value=dataset_dir,
+                ),
+                patch(
+                    "meisenmeister.training.train.get_fold_sample_ids",
+                    return_value={
+                        "train": ["case_001_left", "case_001_right"],
+                        "val": ["case_002_left", "case_002_right"],
+                    },
+                ),
+                patch(
+                    "meisenmeister.training.train.get_trainer_class",
+                    return_value=_MockTrainer,
+                ),
+                patch(
+                    "meisenmeister.training.train.torch.load",
+                    return_value={"model_state_dict": {"weight": 2}},
+                ) as mock_torch_load,
+                patch(
+                    "meisenmeister.training.train.run_final_validation_evaluation"
+                ) as mock_run_eval,
+            ):
+                train_module.train(
+                    1,
+                    fold=0,
+                    trainer_name="mmTrainer_Debug",
+                    architecture_name="ResNet3D18",
+                    val="best",
+                )
+
+        self.assertFalse(_MockTrainer.last_instance.fit_called)
+        self.assertIn("model_best.pt", str(mock_torch_load.call_args.args[0]))
+        self.assertEqual(_MockTrainer.last_instance.loaded_state_dict, {"weight": 2})
+        self.assertIn(
+            "eval_best.json", str(mock_run_eval.call_args.kwargs["output_path"])
+        )
 
     def test_train_passes_continue_training_to_trainer(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -203,6 +331,18 @@ class TrainEntrypointTests(unittest.TestCase):
                 fold=0,
                 continue_training=True,
                 weights_path="/tmp/pretrained.pt",
+            )
+
+    def test_train_rejects_val_with_continue_training(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            "Cannot use --val together with --continue-training",
+        ):
+            train_module.train.__wrapped__(
+                1,
+                fold=0,
+                continue_training=True,
+                val="last",
             )
 
 
