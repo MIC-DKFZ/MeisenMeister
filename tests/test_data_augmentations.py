@@ -16,6 +16,7 @@ from meisenmeister.data_augmentations import (
     FlipAxes3D,
     GaussianNoise3D,
     MultiplicativeBrightness3D,
+    RandomRotation3D,
     RandomScaling3D,
     RandomShiftWithinMargin3D,
     apply_augmentations,
@@ -213,6 +214,76 @@ class DataAugmentationTests(unittest.TestCase):
         self.assertEqual(output["image"].shape, sample["image"].shape)
         self.assertFalse(np.array_equal(output["image"], sample["image"]))
         self.assertGreater(float(output["image"][0, 0, 0, 0]), 0.0)
+
+    def test_random_rotation3d_probability_zero_never_changes_image(self) -> None:
+        sample = self._make_sample()
+
+        output = RandomRotation3D(
+            probability=0.0,
+            max_rotation_degrees=(15.0, 15.0, 15.0),
+        )(sample)
+
+        self.assertTrue(np.array_equal(output["image"], sample["image"]))
+
+    def test_random_rotation3d_rejects_invalid_probability(self) -> None:
+        with self.assertRaisesRegex(ValueError, "probability must be between 0 and 1"):
+            RandomRotation3D(
+                probability=1.5,
+                max_rotation_degrees=(15.0, 15.0, 15.0),
+            )
+
+    def test_random_rotation3d_rejects_invalid_angle_shape(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must contain exactly three values"):
+            RandomRotation3D(probability=1.0, max_rotation_degrees=(15.0, 15.0))
+
+    def test_random_rotation3d_rejects_negative_angles(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must be non-negative"):
+            RandomRotation3D(
+                probability=1.0,
+                max_rotation_degrees=(15.0, -15.0, 10.0),
+            )
+
+    def test_random_rotation3d_preserves_shape(self) -> None:
+        sample = {
+            "image": np.arange(27, dtype=np.float32).reshape(1, 3, 3, 3),
+        }
+        transform = RandomRotation3D(
+            probability=1.0,
+            max_rotation_degrees=(15.0, 10.0, 5.0),
+        )
+
+        with (
+            patch("numpy.random.random", return_value=0.0),
+            patch("numpy.random.uniform", side_effect=[15.0, -10.0, 5.0]),
+        ):
+            output = transform(sample)
+
+        self.assertEqual(output["image"].shape, sample["image"].shape)
+
+    def test_random_rotation3d_uses_same_angles_for_all_channels(self) -> None:
+        sample = {
+            "image": np.stack(
+                [
+                    np.arange(27, dtype=np.float32).reshape(3, 3, 3),
+                    np.arange(27, dtype=np.float32).reshape(3, 3, 3) + 100.0,
+                ],
+                axis=0,
+            ),
+        }
+        transform = RandomRotation3D(
+            probability=1.0,
+            max_rotation_degrees=(15.0, 10.0, 5.0),
+        )
+
+        with (
+            patch("numpy.random.random", return_value=0.0),
+            patch("numpy.random.uniform", side_effect=[15.0, -10.0, 5.0]),
+        ):
+            output = transform(sample)
+
+        self.assertTrue(
+            np.allclose(output["image"][1] - output["image"][0], 100.0, atol=1e-4)
+        )
 
     def test_gaussian_noise3d_probability_zero_never_changes_image(self) -> None:
         sample = self._make_sample()

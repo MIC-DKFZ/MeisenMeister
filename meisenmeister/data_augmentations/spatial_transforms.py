@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import numpy as np
+import SimpleITK as sitk
 
 
 class FlipAxes3D:
@@ -159,6 +160,36 @@ def _resample_channel_with_scale(channel: np.ndarray, scale: float) -> np.ndarra
     return output
 
 
+def _rotate_channel_with_angles(
+    channel: np.ndarray,
+    angles_degrees: tuple[float, float, float],
+) -> np.ndarray:
+    rotation_z, rotation_y, rotation_x = angles_degrees
+    image = sitk.GetImageFromArray(channel.astype(np.float32, copy=False))
+    center_index = [(axis_size - 1) / 2.0 for axis_size in image.GetSize()]
+    center_point = image.TransformContinuousIndexToPhysicalPoint(center_index)
+
+    transform = sitk.Euler3DTransform()
+    transform.SetCenter(center_point)
+    # Public augmentation parameters use NumPy spatial axis order (z, y, x).
+    # SimpleITK Euler3DTransform expects rotations around physical axes (x, y, z).
+    transform.SetRotation(
+        float(np.deg2rad(rotation_x)),
+        float(np.deg2rad(rotation_y)),
+        float(np.deg2rad(rotation_z)),
+    )
+
+    rotated = sitk.Resample(
+        image,
+        image,
+        transform,
+        sitk.sitkLinear,
+        0.0,
+        image.GetPixelID(),
+    )
+    return sitk.GetArrayFromImage(rotated).astype(channel.dtype, copy=False)
+
+
 class RandomScaling3D:
     def __init__(
         self,
@@ -201,3 +232,51 @@ class RandomScaling3D:
             axis=0,
         )
         return {**sample, "image": scaled_image.astype(image.dtype, copy=False)}
+
+
+class RandomRotation3D:
+    def __init__(
+        self,
+        probability: float,
+        max_rotation_degrees: Sequence[float],
+    ) -> None:
+        if not 0.0 <= float(probability) <= 1.0:
+            raise ValueError(
+                f"RandomRotation3D probability must be between 0 and 1, got {probability!r}"
+            )
+        if len(max_rotation_degrees) != 3:
+            raise ValueError(
+                "RandomRotation3D max_rotation_degrees must contain exactly three values"
+            )
+
+        normalized_angles = tuple(float(angle) for angle in max_rotation_degrees)
+        if any(angle < 0.0 for angle in normalized_angles):
+            raise ValueError(
+                "RandomRotation3D max_rotation_degrees values must be non-negative"
+            )
+
+        self.probability = float(probability)
+        self.max_rotation_degrees = normalized_angles
+
+    def _sample_angles(self) -> tuple[float, float, float]:
+        sampled_angles = []
+        for max_angle in self.max_rotation_degrees:
+            if max_angle == 0.0:
+                sampled_angles.append(0.0)
+                continue
+            sampled_angles.append(float(np.random.uniform(-max_angle, max_angle)))
+        return tuple(sampled_angles)
+
+    def __call__(self, sample: dict) -> dict:
+        if self.probability == 0.0:
+            return sample
+        if np.random.random() >= self.probability:
+            return sample
+
+        image = sample["image"]
+        sampled_angles = self._sample_angles()
+        rotated_image = np.stack(
+            [_rotate_channel_with_angles(channel, sampled_angles) for channel in image],
+            axis=0,
+        )
+        return {**sample, "image": rotated_image.astype(image.dtype, copy=False)}
