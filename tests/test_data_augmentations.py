@@ -10,7 +10,12 @@ import blosc2
 import numpy as np
 import torch
 
-from meisenmeister.data_augmentations import Compose3D, FlipAxes3D, apply_augmentations
+from meisenmeister.data_augmentations import (
+    Compose3D,
+    FlipAxes3D,
+    GaussianNoise3D,
+    apply_augmentations,
+)
 from meisenmeister.dataloading import MeisenmeisterROIDataset
 from meisenmeister.training.trainers.mm_trainer import mmTrainer
 
@@ -98,6 +103,116 @@ class DataAugmentationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "probability must be between 0 and 1"):
             FlipAxes3D(probability=1.5, axes=(0,))
 
+    def test_gaussian_noise3d_probability_zero_never_changes_image(self) -> None:
+        sample = self._make_sample()
+
+        output = GaussianNoise3D(probability=0.0)(sample)
+
+        self.assertTrue(np.array_equal(output["image"], sample["image"]))
+
+    def test_gaussian_noise3d_rejects_invalid_probability(self) -> None:
+        with self.assertRaisesRegex(ValueError, "probability must be between 0 and 1"):
+            GaussianNoise3D(probability=1.5)
+
+    def test_gaussian_noise3d_rejects_invalid_p_per_channel(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, "p_per_channel must be between 0 and 1"
+        ):
+            GaussianNoise3D(probability=1.0, p_per_channel=1.5)
+
+    def test_gaussian_noise3d_rejects_invalid_noise_variance_range(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must be ordered as"):
+            GaussianNoise3D(probability=1.0, noise_variance=(0.2, 0.1))
+
+    def test_gaussian_noise3d_synchronizes_channels_when_requested(self) -> None:
+        sample = {
+            **self._make_sample(),
+            "image": np.zeros((2, 2, 2, 2), dtype=np.float32),
+        }
+        transform = GaussianNoise3D(
+            probability=1.0,
+            noise_variance=(0.1, 0.2),
+            p_per_channel=1.0,
+            synchronize_channels=True,
+        )
+        noise = np.ones((2, 2, 2), dtype=np.float32)
+
+        with (
+            patch("numpy.random.random", side_effect=[0.0, 0.0, 0.0]),
+            patch("numpy.random.uniform", return_value=0.123) as mock_uniform,
+            patch("numpy.random.normal", return_value=noise) as mock_normal,
+        ):
+            output = transform(sample)
+
+        self.assertEqual(mock_uniform.call_count, 1)
+        self.assertEqual(mock_normal.call_count, 2)
+        self.assertEqual(mock_normal.call_args_list[0].args[1], 0.123)
+        self.assertEqual(mock_normal.call_args_list[1].args[1], 0.123)
+        self.assertTrue(np.array_equal(output["image"][0], noise))
+        self.assertTrue(np.array_equal(output["image"][1], noise))
+
+    def test_gaussian_noise3d_samples_per_channel_when_not_synchronized(self) -> None:
+        sample = {
+            **self._make_sample(),
+            "image": np.zeros((2, 2, 2, 2), dtype=np.float32),
+        }
+        transform = GaussianNoise3D(
+            probability=1.0,
+            noise_variance=(0.1, 0.2),
+            p_per_channel=1.0,
+            synchronize_channels=False,
+        )
+
+        with (
+            patch("numpy.random.random", side_effect=[0.0, 0.0, 0.0]),
+            patch("numpy.random.uniform", side_effect=[0.111, 0.222]) as mock_uniform,
+            patch(
+                "numpy.random.normal",
+                side_effect=[
+                    np.ones((2, 2, 2), dtype=np.float32),
+                    np.full((2, 2, 2), 2.0, dtype=np.float32),
+                ],
+            ) as mock_normal,
+        ):
+            output = transform(sample)
+
+        self.assertEqual(mock_uniform.call_count, 2)
+        self.assertEqual(mock_normal.call_args_list[0].args[1], 0.111)
+        self.assertEqual(mock_normal.call_args_list[1].args[1], 0.222)
+        self.assertTrue(
+            np.array_equal(output["image"][0], np.ones((2, 2, 2), dtype=np.float32))
+        )
+        self.assertTrue(
+            np.array_equal(
+                output["image"][1], np.full((2, 2, 2), 2.0, dtype=np.float32)
+            )
+        )
+
+    def test_gaussian_noise3d_respects_per_channel_probability(self) -> None:
+        sample = {
+            **self._make_sample(),
+            "image": np.zeros((2, 2, 2, 2), dtype=np.float32),
+        }
+        transform = GaussianNoise3D(
+            probability=1.0,
+            noise_variance=(0.1, 0.1),
+            p_per_channel=0.5,
+            synchronize_channels=True,
+        )
+        noise = np.full((2, 2, 2), 3.0, dtype=np.float32)
+
+        with (
+            patch("numpy.random.random", side_effect=[0.0, 0.0, 0.9]),
+            patch("numpy.random.normal", return_value=noise) as mock_normal,
+        ):
+            output = transform(sample)
+
+        self.assertEqual(mock_normal.call_count, 1)
+        self.assertTrue(np.array_equal(output["image"][0], noise))
+        self.assertTrue(
+            np.array_equal(output["image"][1], np.zeros((2, 2, 2), dtype=np.float32))
+        )
+
     def test_apply_augmentations_rejects_shape_mismatch(self) -> None:
         sample = self._make_sample()
 
@@ -179,8 +294,8 @@ class DatasetAugmentationIntegrationTests(unittest.TestCase):
                 shuffle=False,
             )
 
-        train_sample = trainer.get_train_dataset()[0]
-        val_sample = trainer.get_val_dataset()[0]
+            train_sample = trainer.get_train_dataset()[0]
+            val_sample = trainer.get_val_dataset()[0]
 
         expected_train = torch.flip(torch.from_numpy(self.base_array), dims=(1, 2, 3))
         expected_val = torch.from_numpy(self.base_array + 10.0)
