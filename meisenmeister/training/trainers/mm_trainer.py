@@ -8,6 +8,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from meisenmeister.architectures import get_architecture_class
+from meisenmeister.data_augmentations import Compose3D, FlipAxes3D
 from meisenmeister.dataloading import MeisenmeisterROIDataset
 from meisenmeister.training.base_trainer import BaseTrainer
 from meisenmeister.training.splits import get_fold_sample_ids
@@ -87,6 +88,7 @@ class mmTrainer(BaseTrainer):
         self._loss = None
         self._optimizer = None
         self._scheduler = None
+        self._train_augmentation_pipeline = None
         self._history = create_empty_history()
         self._best_state = {
             "epoch": None,
@@ -342,6 +344,7 @@ class mmTrainer(BaseTrainer):
             self._train_dataset = MeisenmeisterROIDataset(
                 self.preprocessed_dataset_dir,
                 allowed_sample_ids=set(self.split_sample_ids["train"]),
+                augmentation_pipeline=self.get_train_augmentation_pipeline(),
             )
         return self._train_dataset
 
@@ -352,6 +355,13 @@ class mmTrainer(BaseTrainer):
                 allowed_sample_ids=set(self.split_sample_ids["val"]),
             )
         return self._val_dataset
+
+    def get_train_augmentation_pipeline(self):
+        if self._train_augmentation_pipeline is None:
+            self._train_augmentation_pipeline = Compose3D(
+                [FlipAxes3D(probability=0.5, axes=(0, 1, 2))]
+            )
+        return self._train_augmentation_pipeline
 
     def get_train_dataloader(self):
         return DataLoader(

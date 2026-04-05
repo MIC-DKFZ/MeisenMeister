@@ -6,6 +6,8 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
+from meisenmeister.data_augmentations import apply_augmentations
+
 
 def _load_json(path: Path) -> dict:
     if not path.is_file():
@@ -46,11 +48,14 @@ class MeisenmeisterROIDataset(Dataset):
         preprocessed_dataset_dir: Path,
         allowed_sample_ids: set[str] | None = None,
         allowed_case_ids: set[str] | None = None,
+        augmentation_pipeline=None,
     ):
         self.preprocessed_dataset_dir = preprocessed_dataset_dir
         self.allowed_sample_ids = allowed_sample_ids
         self.allowed_case_ids = allowed_case_ids
+        self.augmentation_pipeline = augmentation_pipeline
         self.plans = _load_json(preprocessed_dataset_dir / "mmPlans.json")
+        self.patch_size = tuple(int(axis) for axis in self.plans["target_shape"])
         self.labels = _load_json(preprocessed_dataset_dir / "labelsTr.json")
         self.data_dir = preprocessed_dataset_dir / self.plans["output_folder_name"]
         if not self.data_dir.is_dir():
@@ -100,10 +105,18 @@ class MeisenmeisterROIDataset(Dataset):
     def __getitem__(self, index: int) -> dict:
         sample = self.samples[index]
         image = np.asarray(blosc2.open(str(sample["path"]), mode="r"), dtype=np.float32)
-        return {
-            "image": torch.from_numpy(image),
+        output = {
+            "image": image,
             "label": torch.tensor(sample["label"], dtype=torch.long),
             "sample_id": sample["sample_id"],
             "case_id": sample["case_id"],
             "roi_name": sample["roi_name"],
         }
+        if self.augmentation_pipeline is not None:
+            output = apply_augmentations(
+                output,
+                pipeline=self.augmentation_pipeline,
+                patch_size=self.patch_size,
+            )
+        output["image"] = torch.from_numpy(output["image"])
+        return output
