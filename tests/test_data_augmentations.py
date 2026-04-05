@@ -12,6 +12,7 @@ import torch
 
 from meisenmeister.data_augmentations import (
     Compose3D,
+    Contrast3D,
     FlipAxes3D,
     GaussianNoise3D,
     MultiplicativeBrightness3D,
@@ -324,6 +325,134 @@ class DataAugmentationTests(unittest.TestCase):
         self.assertTrue(
             np.array_equal(output["image"][1], np.ones((2, 2, 2), dtype=np.float32))
         )
+
+    def test_contrast3d_probability_zero_never_changes_image(self) -> None:
+        sample = self._make_sample()
+
+        output = Contrast3D(probability=0.0)(sample)
+
+        self.assertTrue(np.array_equal(output["image"], sample["image"]))
+
+    def test_contrast3d_rejects_invalid_probability(self) -> None:
+        with self.assertRaisesRegex(ValueError, "probability must be between 0 and 1"):
+            Contrast3D(probability=1.5)
+
+    def test_contrast3d_rejects_invalid_p_per_channel(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, "p_per_channel must be between 0 and 1"
+        ):
+            Contrast3D(probability=1.0, p_per_channel=1.5)
+
+    def test_contrast3d_rejects_invalid_contrast_range(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must be ordered as"):
+            Contrast3D(probability=1.0, contrast_range=(1.2, 0.8))
+
+    def test_contrast3d_synchronizes_channels_when_requested(self) -> None:
+        sample = {
+            **self._make_sample(),
+            "image": np.array(
+                [
+                    [[[0.0, 1.0], [2.0, 3.0]]],
+                    [[[10.0, 11.0], [12.0, 13.0]]],
+                ],
+                dtype=np.float32,
+            ),
+        }
+        transform = Contrast3D(
+            probability=1.0,
+            contrast_range=(1.5, 1.5),
+            preserve_range=False,
+            p_per_channel=1.0,
+            synchronize_channels=True,
+        )
+
+        with patch("numpy.random.random", side_effect=[0.0, 0.0, 0.0]):
+            output = transform(sample)
+
+        expected_channel_0 = np.array([[[-0.75, 0.75], [2.25, 3.75]]], dtype=np.float32)
+        expected_channel_1 = np.array(
+            [[[9.25, 10.75], [12.25, 13.75]]], dtype=np.float32
+        )
+        self.assertTrue(np.allclose(output["image"][0], expected_channel_0))
+        self.assertTrue(np.allclose(output["image"][1], expected_channel_1))
+
+    def test_contrast3d_samples_per_channel_when_not_synchronized(self) -> None:
+        sample = {
+            **self._make_sample(),
+            "image": np.array(
+                [
+                    [[[0.0, 1.0], [2.0, 3.0]]],
+                    [[[10.0, 11.0], [12.0, 13.0]]],
+                ],
+                dtype=np.float32,
+            ),
+        }
+        transform = Contrast3D(
+            probability=1.0,
+            contrast_range=(0.5, 1.5),
+            preserve_range=False,
+            p_per_channel=1.0,
+            synchronize_channels=False,
+        )
+
+        with (
+            patch("numpy.random.random", side_effect=[0.0, 0.0, 0.0]),
+            patch("numpy.random.uniform", side_effect=[0.5, 1.5]),
+        ):
+            output = transform(sample)
+
+        expected_channel_0 = np.array([[[0.75, 1.25], [1.75, 2.25]]], dtype=np.float32)
+        expected_channel_1 = np.array(
+            [[[9.25, 10.75], [12.25, 13.75]]], dtype=np.float32
+        )
+        self.assertTrue(np.allclose(output["image"][0], expected_channel_0))
+        self.assertTrue(np.allclose(output["image"][1], expected_channel_1))
+
+    def test_contrast3d_preserves_range_when_requested(self) -> None:
+        sample = {
+            **self._make_sample(),
+            "image": np.array([[[[0.0, 1.0], [2.0, 3.0]]]], dtype=np.float32),
+        }
+        transform = Contrast3D(
+            probability=1.0,
+            contrast_range=(2.0, 2.0),
+            preserve_range=True,
+            p_per_channel=1.0,
+            synchronize_channels=True,
+        )
+
+        with patch("numpy.random.random", side_effect=[0.0, 0.0]):
+            output = transform(sample)
+
+        expected = np.array([[[[0.0, 0.5], [2.5, 3.0]]]], dtype=np.float32)
+        self.assertTrue(np.allclose(output["image"], expected))
+
+    def test_contrast3d_respects_per_channel_probability(self) -> None:
+        sample = {
+            **self._make_sample(),
+            "image": np.array(
+                [
+                    [[[0.0, 1.0], [2.0, 3.0]]],
+                    [[[10.0, 11.0], [12.0, 13.0]]],
+                ],
+                dtype=np.float32,
+            ),
+        }
+        transform = Contrast3D(
+            probability=1.0,
+            contrast_range=(2.0, 2.0),
+            preserve_range=False,
+            p_per_channel=0.5,
+            synchronize_channels=True,
+        )
+
+        with patch("numpy.random.random", side_effect=[0.0, 0.0, 0.9]):
+            output = transform(sample)
+
+        expected_channel_0 = np.array([[[-1.5, 0.5], [2.5, 4.5]]], dtype=np.float32)
+        expected_channel_1 = np.array([[[10.0, 11.0], [12.0, 13.0]]], dtype=np.float32)
+        self.assertTrue(np.allclose(output["image"][0], expected_channel_0))
+        self.assertTrue(np.allclose(output["image"][1], expected_channel_1))
 
     def test_apply_augmentations_rejects_shape_mismatch(self) -> None:
         sample = self._make_sample()
