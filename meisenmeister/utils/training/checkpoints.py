@@ -182,25 +182,3 @@ def build_trainer_config(
         "num_classes": getattr(architecture, "num_classes", None),
         "in_channels": getattr(architecture, "in_channels", None),
     }
-
-
-def load_pretrained_model_weights(
-    *,
-    path: Path,
-    architecture,
-    device: torch.device,
-) -> None:
-    if not path.is_file():
-        raise FileNotFoundError(f"Pretrained weights file does not exist: {path}")
-
-    payload = torch.load(path, map_location=device, weights_only=False)
-    if isinstance(payload, dict) and "model_state_dict" in payload:
-        state_dict = payload["model_state_dict"]
-    elif isinstance(payload, dict):
-        state_dict = payload
-    else:
-        raise TypeError(
-            f"Unsupported pretrained weights payload type: {type(payload).__name__}"
-        )
-
-    architecture.load_state_dict(state_dict)

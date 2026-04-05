@@ -20,7 +20,6 @@ from meisenmeister.utils.training import (
     compute_ema,
     create_empty_history,
     format_metric,
-    load_pretrained_model_weights,
     load_resume_checkpoint,
     log_message,
     prepare_output_dir,
@@ -141,9 +140,8 @@ class mmTrainer(BaseTrainer):
                 self.log_path,
             )
         elif self.weights_path is not None:
-            load_pretrained_model_weights(
+            self.get_architecture().load_initial_weights(
                 path=self.weights_path,
-                architecture=self.get_architecture(),
                 device=self.device,
             )
             log_message(
