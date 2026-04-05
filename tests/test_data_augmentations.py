@@ -16,6 +16,7 @@ from meisenmeister.data_augmentations import (
     FlipAxes3D,
     GaussianNoise3D,
     MultiplicativeBrightness3D,
+    RandomShiftWithinMargin3D,
     apply_augmentations,
 )
 from meisenmeister.dataloading import MeisenmeisterROIDataset
@@ -104,6 +105,62 @@ class DataAugmentationTests(unittest.TestCase):
     def test_flip_axes3d_rejects_invalid_probability(self) -> None:
         with self.assertRaisesRegex(ValueError, "probability must be between 0 and 1"):
             FlipAxes3D(probability=1.5, axes=(0,))
+
+    def test_random_shift_within_margin3d_probability_zero_never_changes_image(
+        self,
+    ) -> None:
+        sample = self._make_sample()
+
+        output = RandomShiftWithinMargin3D(
+            probability=0.0,
+            max_shift_voxels=(1, 1, 1),
+        )(sample)
+
+        self.assertTrue(np.array_equal(output["image"], sample["image"]))
+
+    def test_random_shift_within_margin3d_rejects_invalid_probability(self) -> None:
+        with self.assertRaisesRegex(ValueError, "probability must be between 0 and 1"):
+            RandomShiftWithinMargin3D(probability=1.5, max_shift_voxels=(1, 1, 1))
+
+    def test_random_shift_within_margin3d_rejects_invalid_shift_shape(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must contain exactly three values"):
+            RandomShiftWithinMargin3D(probability=1.0, max_shift_voxels=(1, 1))
+
+    def test_random_shift_within_margin3d_rejects_negative_shift(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must be non-negative"):
+            RandomShiftWithinMargin3D(probability=1.0, max_shift_voxels=(1, -1, 0))
+
+    def test_random_shift_within_margin3d_shifts_with_zero_padding(self) -> None:
+        sample = {"image": np.arange(8, dtype=np.float32).reshape(1, 2, 2, 2)}
+        transform = RandomShiftWithinMargin3D(
+            probability=1.0,
+            max_shift_voxels=(1, 1, 1),
+        )
+
+        with (
+            patch("numpy.random.random", return_value=0.0),
+            patch("numpy.random.randint", side_effect=[1, 0, -1]),
+        ):
+            output = transform(sample)
+
+        expected = np.zeros((1, 2, 2, 2), dtype=np.float32)
+        expected[:, 1:2, :, 0:1] = sample["image"][:, 0:1, :, 1:2]
+        self.assertTrue(np.array_equal(output["image"], expected))
+
+    def test_random_shift_within_margin3d_preserves_shape(self) -> None:
+        sample = self._make_sample()
+        transform = RandomShiftWithinMargin3D(
+            probability=1.0,
+            max_shift_voxels=(1, 1, 1),
+        )
+
+        with (
+            patch("numpy.random.random", return_value=0.0),
+            patch("numpy.random.randint", side_effect=[-1, 1, 0]),
+        ):
+            output = transform(sample)
+
+        self.assertEqual(output["image"].shape, sample["image"].shape)
 
     def test_gaussian_noise3d_probability_zero_never_changes_image(self) -> None:
         sample = self._make_sample()
@@ -480,6 +537,8 @@ class DatasetAugmentationIntegrationTests(unittest.TestCase):
         _write_json(
             self.preprocessed_dataset_dir / "mmPlans.json",
             {
+                "margin_mm": [10.0, 10.0, 10.0],
+                "target_spacing": [1.0, 1.0, 1.0],
                 "target_shape": [2, 2, 2],
                 "output_folder_name": "mm_b2nd",
             },
@@ -542,3 +601,25 @@ class DatasetAugmentationIntegrationTests(unittest.TestCase):
         expected_val = torch.from_numpy(self.base_array + 10.0)
         self.assertTrue(torch.equal(train_sample["image"], expected_train))
         self.assertTrue(torch.equal(val_sample["image"], expected_val))
+
+    def test_mm_trainer_builds_margin_based_random_shift_from_plans(self) -> None:
+        with patch(
+            "meisenmeister.training.trainers.mm_trainer.get_fold_sample_ids",
+            return_value={
+                "train": ["case_000_left"],
+                "val": ["case_001_left"],
+            },
+        ):
+            trainer = mmTrainer(
+                dataset_id="001",
+                fold=0,
+                dataset_dir=self.root / "Dataset_001_Test",
+                preprocessed_dataset_dir=self.preprocessed_dataset_dir,
+                results_dir=self.root / "results",
+                shuffle=False,
+            )
+
+        pipeline = trainer.get_train_augmentation_pipeline()
+
+        self.assertIsInstance(pipeline.augmentations[0], RandomShiftWithinMargin3D)
+        self.assertEqual(pipeline.augmentations[0].max_shift_voxels, (10, 10, 10))

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 
@@ -8,7 +9,11 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from meisenmeister.architectures import get_architecture_class
-from meisenmeister.data_augmentations import Compose3D, FlipAxes3D
+from meisenmeister.data_augmentations import (
+    Compose3D,
+    FlipAxes3D,
+    RandomShiftWithinMargin3D,
+)
 from meisenmeister.dataloading import MeisenmeisterROIDataset
 from meisenmeister.training.base_trainer import BaseTrainer
 from meisenmeister.training.splits import get_fold_sample_ids
@@ -89,6 +94,7 @@ class mmTrainer(BaseTrainer):
         self._optimizer = None
         self._scheduler = None
         self._train_augmentation_pipeline = None
+        self._plans = None
         self._history = create_empty_history()
         self._best_state = {
             "epoch": None,
@@ -358,10 +364,32 @@ class mmTrainer(BaseTrainer):
 
     def get_train_augmentation_pipeline(self):
         if self._train_augmentation_pipeline is None:
+            plans = self.get_preprocessing_plans()
+            max_shift_voxels = tuple(
+                int(margin_axis / spacing_axis)
+                for margin_axis, spacing_axis in zip(
+                    plans["margin_mm"],
+                    plans["target_spacing"],
+                    strict=True,
+                )
+            )
             self._train_augmentation_pipeline = Compose3D(
-                [FlipAxes3D(probability=0.5, axes=(0, 1, 2))]
+                [
+                    RandomShiftWithinMargin3D(
+                        probability=0.5,
+                        max_shift_voxels=max_shift_voxels,
+                    ),
+                    FlipAxes3D(probability=0.5, axes=(0, 1, 2)),
+                ]
             )
         return self._train_augmentation_pipeline
+
+    def get_preprocessing_plans(self) -> dict:
+        if self._plans is None:
+            plans_path = self.preprocessed_dataset_dir / "mmPlans.json"
+            with plans_path.open("r", encoding="utf-8") as file:
+                self._plans = json.load(file)
+        return self._plans
 
     def get_train_dataloader(self):
         return DataLoader(
