@@ -11,6 +11,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
+from meisenmeister.architectures import BaseArchitecture
 from meisenmeister.training.trainers.mm_trainer import mmTrainer
 
 
@@ -36,11 +37,9 @@ class _TinyROIDataset(Dataset):
         }
 
 
-class _TinyNet(nn.Module):
+class _TinyNet(BaseArchitecture):
     def __init__(self) -> None:
-        super().__init__()
-        self.in_channels = 1
-        self.num_classes = 2
+        super().__init__(in_channels=1, num_classes=2)
         self.fc = nn.Linear(8, 2)
 
     def forward(self, x):
@@ -279,11 +278,8 @@ class MMTrainerTests(unittest.TestCase):
         trainer.fold_dir.mkdir(parents=True, exist_ok=True)
         trainer.log_path.write_text("", encoding="utf-8")
 
-        from meisenmeister.utils.training import load_pretrained_model_weights
-
-        load_pretrained_model_weights(
+        trainer.get_architecture().load_initial_weights(
             path=weights_path,
-            architecture=trainer.get_architecture(),
             device=trainer.device,
         )
 
