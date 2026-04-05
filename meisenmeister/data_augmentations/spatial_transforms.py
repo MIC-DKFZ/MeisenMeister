@@ -101,3 +101,103 @@ class RandomShiftWithinMargin3D:
             source_slices[2],
         ]
         return {**sample, "image": shifted_image}
+
+
+def _resample_channel_with_scale(channel: np.ndarray, scale: float) -> np.ndarray:
+    depth, height, width = channel.shape
+    center = (np.asarray(channel.shape, dtype=np.float32) - 1.0) / 2.0
+
+    z = np.arange(depth, dtype=np.float32)
+    y = np.arange(height, dtype=np.float32)
+    x = np.arange(width, dtype=np.float32)
+    zz, yy, xx = np.meshgrid(z, y, x, indexing="ij")
+
+    src_z = center[0] + (zz - center[0]) / scale
+    src_y = center[1] + (yy - center[1]) / scale
+    src_x = center[2] + (xx - center[2]) / scale
+
+    valid = (
+        (src_z >= 0.0)
+        & (src_z <= depth - 1)
+        & (src_y >= 0.0)
+        & (src_y <= height - 1)
+        & (src_x >= 0.0)
+        & (src_x <= width - 1)
+    )
+
+    z0 = np.floor(src_z).astype(np.int64)
+    y0 = np.floor(src_y).astype(np.int64)
+    x0 = np.floor(src_x).astype(np.int64)
+    z1 = np.clip(z0 + 1, 0, depth - 1)
+    y1 = np.clip(y0 + 1, 0, height - 1)
+    x1 = np.clip(x0 + 1, 0, width - 1)
+
+    wz = src_z - z0
+    wy = src_y - y0
+    wx = src_x - x0
+
+    c000 = channel[z0, y0, x0]
+    c001 = channel[z0, y0, x1]
+    c010 = channel[z0, y1, x0]
+    c011 = channel[z0, y1, x1]
+    c100 = channel[z1, y0, x0]
+    c101 = channel[z1, y0, x1]
+    c110 = channel[z1, y1, x0]
+    c111 = channel[z1, y1, x1]
+
+    output = (
+        c000 * (1.0 - wz) * (1.0 - wy) * (1.0 - wx)
+        + c001 * (1.0 - wz) * (1.0 - wy) * wx
+        + c010 * (1.0 - wz) * wy * (1.0 - wx)
+        + c011 * (1.0 - wz) * wy * wx
+        + c100 * wz * (1.0 - wy) * (1.0 - wx)
+        + c101 * wz * (1.0 - wy) * wx
+        + c110 * wz * wy * (1.0 - wx)
+        + c111 * wz * wy * wx
+    ).astype(channel.dtype, copy=False)
+    output[~valid] = 0.0
+    return output
+
+
+class RandomScaling3D:
+    def __init__(
+        self,
+        probability: float,
+        scaling: Sequence[float],
+    ) -> None:
+        if not 0.0 <= float(probability) <= 1.0:
+            raise ValueError(
+                f"RandomScaling3D probability must be between 0 and 1, got {probability!r}"
+            )
+        if len(scaling) != 2:
+            raise ValueError("RandomScaling3D scaling must contain exactly two values")
+
+        scaling_min = float(scaling[0])
+        scaling_max = float(scaling[1])
+        if scaling_min <= 0.0 or scaling_max <= 0.0:
+            raise ValueError("RandomScaling3D scaling values must be positive")
+        if scaling_min > scaling_max:
+            raise ValueError("RandomScaling3D scaling must be ordered as (min, max)")
+
+        self.probability = float(probability)
+        self.scaling = (scaling_min, scaling_max)
+
+    def _sample_scale(self) -> float:
+        low, high = self.scaling
+        if low == high:
+            return low
+        return float(np.random.uniform(low, high))
+
+    def __call__(self, sample: dict) -> dict:
+        if self.probability == 0.0:
+            return sample
+        if np.random.random() >= self.probability:
+            return sample
+
+        image = sample["image"]
+        scale = self._sample_scale()
+        scaled_image = np.stack(
+            [_resample_channel_with_scale(channel, scale) for channel in image],
+            axis=0,
+        )
+        return {**sample, "image": scaled_image.astype(image.dtype, copy=False)}

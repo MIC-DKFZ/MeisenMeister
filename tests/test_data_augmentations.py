@@ -16,6 +16,7 @@ from meisenmeister.data_augmentations import (
     FlipAxes3D,
     GaussianNoise3D,
     MultiplicativeBrightness3D,
+    RandomScaling3D,
     RandomShiftWithinMargin3D,
     apply_augmentations,
 )
@@ -161,6 +162,57 @@ class DataAugmentationTests(unittest.TestCase):
             output = transform(sample)
 
         self.assertEqual(output["image"].shape, sample["image"].shape)
+
+    def test_random_scaling3d_probability_zero_never_changes_image(self) -> None:
+        sample = self._make_sample()
+
+        output = RandomScaling3D(probability=0.0, scaling=(0.7, 1.4))(sample)
+
+        self.assertTrue(np.array_equal(output["image"], sample["image"]))
+
+    def test_random_scaling3d_rejects_invalid_probability(self) -> None:
+        with self.assertRaisesRegex(ValueError, "probability must be between 0 and 1"):
+            RandomScaling3D(probability=1.5, scaling=(0.7, 1.4))
+
+    def test_random_scaling3d_rejects_invalid_scaling_shape(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must contain exactly two values"):
+            RandomScaling3D(probability=1.0, scaling=(0.7,))
+
+    def test_random_scaling3d_rejects_non_positive_scaling(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must be positive"):
+            RandomScaling3D(probability=1.0, scaling=(0.0, 1.4))
+
+    def test_random_scaling3d_rejects_unordered_scaling(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must be ordered as"):
+            RandomScaling3D(probability=1.0, scaling=(1.4, 0.7))
+
+    def test_random_scaling3d_zoom_out_adds_zero_padding(self) -> None:
+        sample = {
+            "image": np.ones((1, 3, 3, 3), dtype=np.float32),
+        }
+        transform = RandomScaling3D(probability=1.0, scaling=(0.7, 0.7))
+
+        with patch("numpy.random.random", return_value=0.0):
+            output = transform(sample)
+
+        self.assertEqual(output["image"].shape, sample["image"].shape)
+        self.assertEqual(float(output["image"][0, 1, 1, 1]), 1.0)
+        self.assertEqual(float(output["image"][0, 0, 0, 0]), 0.0)
+
+    def test_random_scaling3d_zoom_in_changes_values_while_preserving_shape(
+        self,
+    ) -> None:
+        sample = {
+            "image": np.arange(27, dtype=np.float32).reshape(1, 3, 3, 3),
+        }
+        transform = RandomScaling3D(probability=1.0, scaling=(1.4, 1.4))
+
+        with patch("numpy.random.random", return_value=0.0):
+            output = transform(sample)
+
+        self.assertEqual(output["image"].shape, sample["image"].shape)
+        self.assertFalse(np.array_equal(output["image"], sample["image"]))
+        self.assertGreater(float(output["image"][0, 0, 0, 0]), 0.0)
 
     def test_gaussian_noise3d_probability_zero_never_changes_image(self) -> None:
         sample = self._make_sample()
