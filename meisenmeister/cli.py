@@ -10,6 +10,7 @@ from meisenmeister.plan_and_preprocess.homogenize import homogenize
 from meisenmeister.plan_and_preprocess.plan_and_preprocess import plan_and_preprocess
 from meisenmeister.plan_and_preprocess.plan_experiment import plan_experiment
 from meisenmeister.plan_and_preprocess.preprocess import preprocess
+from meisenmeister.training.predict import predict
 from meisenmeister.training.splits import create_five_fold_splits
 from meisenmeister.training.train import train
 from meisenmeister.utils import (
@@ -195,6 +196,77 @@ def mm_train() -> None:
         weights_path=args.weights,
         experiment_postfix=args.postfix,
         val=args.val,
+    )
+
+
+def mm_predict() -> None:
+    parser = argparse.ArgumentParser(
+        prog="mm_predict",
+        description="Run ROI-level inference on one or more cases from an imagesTr-style input folder.",
+    )
+    parser.add_argument(
+        "-d",
+        type=int,
+        required=True,
+        help="Integer dataset identifier.",
+    )
+    parser.add_argument(
+        "-i",
+        "--input-dir",
+        required=True,
+        help="Input folder containing one or more cases in imagesTr naming format.",
+    )
+    parser.add_argument(
+        "-o",
+        "--output-dir",
+        required=True,
+        help="Output folder for masks and predictions.json.",
+    )
+    parser.add_argument(
+        "-f",
+        "--folds",
+        type=int,
+        nargs="+",
+        required=True,
+        help="One or more fold indices to use for ensembling.",
+    )
+    parser.add_argument(
+        "--trainer",
+        default="mmTrainer",
+        help="Trainer class name registered under meisenmeister.training.trainers.",
+    )
+    parser.add_argument(
+        "-a",
+        "--architecture",
+        default="ResNet3D18",
+        help="Architecture class name registered under meisenmeister.architectures.",
+    )
+    parser.add_argument(
+        "--postfix",
+        help="Optional suffix appended to the experiment name.",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        default="best",
+        choices=("best", "last"),
+        help="Checkpoint variant to load for each fold.",
+    )
+    parser.add_argument(
+        "--no-tta",
+        action="store_true",
+        help="Disable default flip test-time augmentation.",
+    )
+    args = parser.parse_args()
+    predict(
+        args.d,
+        input_dir=args.input_dir,
+        output_dir=args.output_dir,
+        folds=args.folds,
+        trainer_name=args.trainer,
+        architecture_name=args.architecture,
+        experiment_postfix=args.postfix,
+        checkpoint=args.checkpoint,
+        use_tta=not args.no_tta,
     )
 
 

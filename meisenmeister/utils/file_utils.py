@@ -43,15 +43,30 @@ def verify_training_files_present(
     dataset_dir: Path, dataset_json: dict
 ) -> dict[str, list[Path]]:
     images_tr_dir = dataset_dir / "imagesTr"
-    if not images_tr_dir.is_dir():
-        raise FileNotFoundError(f"Missing imagesTr directory in {dataset_dir}")
+    return discover_case_files(
+        images_tr_dir,
+        dataset_json,
+        expected_num_cases=int(dataset_json["numTraining"]),
+    )
+
+
+def discover_case_files(
+    images_dir: Path,
+    dataset_json: dict,
+    *,
+    expected_num_cases: int | None = None,
+) -> dict[str, list[Path]]:
+    if not images_dir.is_dir():
+        raise FileNotFoundError(f"Missing input directory: {images_dir}")
 
     channel_names = dataset_json["channel_names"]
     file_ending = dataset_json["file_ending"]
-    num_training = dataset_json["numTraining"]
+    num_training = expected_num_cases
 
     print(
-        f"Verifying training files in {images_tr_dir} for {num_training} cases "
+        f"Verifying input files in {images_dir}"
+        + (f" for {num_training} cases" if num_training is not None else "")
+        + " "
         f"with channels {channel_names} and file ending '{file_ending}'"
     )
 
@@ -63,7 +78,7 @@ def verify_training_files_present(
 
     case_files: dict[str, list[Path]] = {}
     unexpected_files: list[str] = []
-    for path in sorted(images_tr_dir.iterdir()):
+    for path in sorted(images_dir.iterdir()):
         if not path.is_file():
             continue
 
@@ -79,17 +94,17 @@ def verify_training_files_present(
             unexpected_files.append(path.name)
 
     found_case_ids = sorted(case_files)
-    print(f"Found case ids in imagesTr: {found_case_ids}")
+    print(f"Found case ids in {images_dir.name}: {found_case_ids}")
 
     if unexpected_files:
         unexpected_files_str = ", ".join(unexpected_files)
         raise ValueError(
-            f"Found unexpected files in {images_tr_dir}: {unexpected_files_str}"
+            f"Found unexpected files in {images_dir}: {unexpected_files_str}"
         )
 
-    if len(case_files) != num_training:
+    if expected_num_cases is not None and len(case_files) != expected_num_cases:
         raise ValueError(
-            f"Expected {num_training} training cases in {images_tr_dir}, found "
+            f"Expected {expected_num_cases} cases in {images_dir}, found "
             f"{len(case_files)}: {found_case_ids}"
         )
 
@@ -121,8 +136,8 @@ def verify_training_files_present(
 
     if invalid_cases:
         raise ValueError(
-            "Training files are incomplete or inconsistent in "
-            f"{images_tr_dir}: {'; '.join(invalid_cases)}"
+            "Input files are incomplete or inconsistent in "
+            f"{images_dir}: {'; '.join(invalid_cases)}"
         )
 
     return case_files

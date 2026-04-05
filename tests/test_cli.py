@@ -23,6 +23,7 @@ class CliTests(unittest.TestCase):
             continue_training=False,
             weights_path=None,
             experiment_postfix=None,
+            val=None,
         )
 
     def test_mm_train_passes_explicit_trainer(self) -> None:
@@ -53,6 +54,7 @@ class CliTests(unittest.TestCase):
             continue_training=False,
             weights_path=None,
             experiment_postfix=None,
+            val=None,
         )
 
     def test_mm_train_passes_continue_training_flag(self) -> None:
@@ -70,6 +72,7 @@ class CliTests(unittest.TestCase):
             continue_training=True,
             weights_path=None,
             experiment_postfix=None,
+            val=None,
         )
 
     def test_mm_train_passes_weights_and_postfix(self) -> None:
@@ -100,6 +103,71 @@ class CliTests(unittest.TestCase):
             continue_training=False,
             weights_path="/tmp/pretrained.pt",
             experiment_postfix="finetuningNNSSL",
+            val=None,
+        )
+
+    def test_mm_predict_uses_defaults(self) -> None:
+        with (
+            patch(
+                "sys.argv",
+                ["mm_predict", "-d", "1", "-i", "/tmp/in", "-o", "/tmp/out", "-f", "0"],
+            ),
+            patch("meisenmeister.cli.predict") as mock_predict,
+        ):
+            cli.mm_predict()
+
+        mock_predict.assert_called_once_with(
+            1,
+            input_dir="/tmp/in",
+            output_dir="/tmp/out",
+            folds=[0],
+            trainer_name="mmTrainer",
+            architecture_name="ResNet3D18",
+            experiment_postfix=None,
+            checkpoint="best",
+            use_tta=True,
+        )
+
+    def test_mm_predict_passes_options(self) -> None:
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "mm_predict",
+                    "-d",
+                    "1",
+                    "-i",
+                    "/tmp/in",
+                    "-o",
+                    "/tmp/out",
+                    "-f",
+                    "0",
+                    "2",
+                    "--trainer",
+                    "mmTrainer_Debug",
+                    "-a",
+                    "ResNet3D18",
+                    "--postfix",
+                    "finetuningNNSSL",
+                    "--checkpoint",
+                    "last",
+                    "--no-tta",
+                ],
+            ),
+            patch("meisenmeister.cli.predict") as mock_predict,
+        ):
+            cli.mm_predict()
+
+        mock_predict.assert_called_once_with(
+            1,
+            input_dir="/tmp/in",
+            output_dir="/tmp/out",
+            folds=[0, 2],
+            trainer_name="mmTrainer_Debug",
+            architecture_name="ResNet3D18",
+            experiment_postfix="finetuningNNSSL",
+            checkpoint="last",
+            use_tta=False,
         )
 
     def test_mm_create_5fold_writes_to_preprocessed_dataset(self) -> None:

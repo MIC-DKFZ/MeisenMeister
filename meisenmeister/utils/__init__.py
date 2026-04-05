@@ -1,6 +1,7 @@
 """Utility package for meisenmeister."""
 
 from .file_utils import (
+    discover_case_files,
     extract_roi_fingerprint_from_masks,
     load_dataset_json,
     verify_roi_masks_present,
@@ -42,6 +43,7 @@ __all__ = [
     "mm_raw",
     "mm_preprocessed",
     "mm_results",
+    "discover_case_files",
     "extract_roi_fingerprint_from_masks",
     "load_dataset_json",
     "verify_roi_masks_present",

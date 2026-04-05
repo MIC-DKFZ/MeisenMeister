@@ -55,7 +55,12 @@ class MeisenmeisterROIDataset(Dataset):
         self.allowed_case_ids = allowed_case_ids
         self.augmentation_pipeline = augmentation_pipeline
         self.plans = _load_json(preprocessed_dataset_dir / "mmPlans.json")
-        self.patch_size = tuple(int(axis) for axis in self.plans["target_shape"])
+        target_shape = self.plans.get("target_shape")
+        self.patch_size = (
+            tuple(int(axis) for axis in target_shape)
+            if target_shape is not None
+            else None
+        )
         self.labels = _load_json(preprocessed_dataset_dir / "labelsTr.json")
         self.data_dir = preprocessed_dataset_dir / self.plans["output_folder_name"]
         if not self.data_dir.is_dir():
@@ -113,6 +118,10 @@ class MeisenmeisterROIDataset(Dataset):
             "roi_name": sample["roi_name"],
         }
         if self.augmentation_pipeline is not None:
+            if self.patch_size is None:
+                raise KeyError(
+                    "mmPlans.json must define target_shape when augmentation_pipeline is used"
+                )
             output = apply_augmentations(
                 output,
                 pipeline=self.augmentation_pipeline,

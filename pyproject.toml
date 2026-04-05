@@ -27,6 +27,7 @@ mm_preprocess = "meisenmeister.cli:mm_preprocess"
 mm_plan_and_preprocess = "meisenmeister.cli:mm_plan_and_preprocess"
 mm_create_5fold = "meisenmeister.cli:mm_create_5fold"
 mm_train = "meisenmeister.cli:mm_train"
+mm_predict = "meisenmeister.cli:mm_predict"
 
 [tool.setuptools]
 include-package-data = true
