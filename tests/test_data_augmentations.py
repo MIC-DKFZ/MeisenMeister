@@ -14,6 +14,7 @@ from meisenmeister.data_augmentations import (
     Compose3D,
     FlipAxes3D,
     GaussianNoise3D,
+    MultiplicativeBrightness3D,
     apply_augmentations,
 )
 from meisenmeister.dataloading import MeisenmeisterROIDataset
@@ -211,6 +212,117 @@ class DataAugmentationTests(unittest.TestCase):
         self.assertTrue(np.array_equal(output["image"][0], noise))
         self.assertTrue(
             np.array_equal(output["image"][1], np.zeros((2, 2, 2), dtype=np.float32))
+        )
+
+    def test_multiplicative_brightness3d_probability_zero_never_changes_image(
+        self,
+    ) -> None:
+        sample = self._make_sample()
+
+        output = MultiplicativeBrightness3D(probability=0.0)(sample)
+
+        self.assertTrue(np.array_equal(output["image"], sample["image"]))
+
+    def test_multiplicative_brightness3d_rejects_invalid_probability(self) -> None:
+        with self.assertRaisesRegex(ValueError, "probability must be between 0 and 1"):
+            MultiplicativeBrightness3D(probability=1.5)
+
+    def test_multiplicative_brightness3d_rejects_invalid_p_per_channel(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, "p_per_channel must be between 0 and 1"
+        ):
+            MultiplicativeBrightness3D(probability=1.0, p_per_channel=1.5)
+
+    def test_multiplicative_brightness3d_rejects_invalid_multiplier_range(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must be ordered as"):
+            MultiplicativeBrightness3D(probability=1.0, multiplier_range=(1.2, 0.8))
+
+    def test_multiplicative_brightness3d_synchronizes_channels_when_requested(
+        self,
+    ) -> None:
+        sample = {
+            **self._make_sample(),
+            "image": np.ones((2, 2, 2, 2), dtype=np.float32),
+        }
+        transform = MultiplicativeBrightness3D(
+            probability=1.0,
+            multiplier_range=(0.75, 1.25),
+            p_per_channel=1.0,
+            synchronize_channels=True,
+        )
+
+        with (
+            patch("numpy.random.random", side_effect=[0.0, 0.0, 0.0]),
+            patch("numpy.random.uniform", return_value=1.1) as mock_uniform,
+        ):
+            output = transform(sample)
+
+        self.assertEqual(mock_uniform.call_count, 1)
+        self.assertTrue(
+            np.array_equal(
+                output["image"][0], np.full((2, 2, 2), 1.1, dtype=np.float32)
+            )
+        )
+        self.assertTrue(
+            np.array_equal(
+                output["image"][1], np.full((2, 2, 2), 1.1, dtype=np.float32)
+            )
+        )
+
+    def test_multiplicative_brightness3d_samples_per_channel_when_not_synchronized(
+        self,
+    ) -> None:
+        sample = {
+            **self._make_sample(),
+            "image": np.ones((2, 2, 2, 2), dtype=np.float32),
+        }
+        transform = MultiplicativeBrightness3D(
+            probability=1.0,
+            multiplier_range=(0.75, 1.25),
+            p_per_channel=1.0,
+            synchronize_channels=False,
+        )
+
+        with (
+            patch("numpy.random.random", side_effect=[0.0, 0.0, 0.0]),
+            patch("numpy.random.uniform", side_effect=[0.8, 1.2]) as mock_uniform,
+        ):
+            output = transform(sample)
+
+        self.assertEqual(mock_uniform.call_count, 2)
+        self.assertTrue(
+            np.array_equal(
+                output["image"][0], np.full((2, 2, 2), 0.8, dtype=np.float32)
+            )
+        )
+        self.assertTrue(
+            np.array_equal(
+                output["image"][1], np.full((2, 2, 2), 1.2, dtype=np.float32)
+            )
+        )
+
+    def test_multiplicative_brightness3d_respects_per_channel_probability(self) -> None:
+        sample = {
+            **self._make_sample(),
+            "image": np.ones((2, 2, 2, 2), dtype=np.float32),
+        }
+        transform = MultiplicativeBrightness3D(
+            probability=1.0,
+            multiplier_range=(1.5, 1.5),
+            p_per_channel=0.5,
+            synchronize_channels=False,
+        )
+
+        with patch("numpy.random.random", side_effect=[0.0, 0.0, 0.9]):
+            output = transform(sample)
+
+        self.assertTrue(
+            np.array_equal(
+                output["image"][0], np.full((2, 2, 2), 1.5, dtype=np.float32)
+            )
+        )
+        self.assertTrue(
+            np.array_equal(output["image"][1], np.ones((2, 2, 2), dtype=np.float32))
         )
 
     def test_apply_augmentations_rejects_shape_mismatch(self) -> None:

@@ -69,7 +69,7 @@ class GaussianNoise3D:
                 if synchronized_scale is not None
                 else self._sample_noise_scale()
             )
-            
+
             noisy_image[channel_index] = noisy_image[channel_index] + np.random.normal(
                 0.0,
                 noise_scale,
