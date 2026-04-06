@@ -79,6 +79,7 @@ class mmTrainer(BaseTrainer):
         continue_training: bool = False,
         weights_path: Path | None = None,
         experiment_postfix: str | None = None,
+        compile_enabled: bool = True,
     ) -> None:
         super().__init__(dataset_id, fold, dataset_dir, preprocessed_dataset_dir)
         self.results_dir = results_dir
@@ -98,7 +99,7 @@ class mmTrainer(BaseTrainer):
         self.grad_scaler = create_grad_scaler(self.device)
         self.compile_enabled, self.compile_status_message = resolve_compile_enabled(
             self.device,
-            enabled=True,
+            enabled=compile_enabled,
         )
         self.compile_applied = False
         self.split_sample_ids = get_fold_sample_ids(preprocessed_dataset_dir, fold)
@@ -189,6 +190,10 @@ class mmTrainer(BaseTrainer):
                 self.log_path,
             )
 
+        log_message(
+            "Preparing model for training performance optimizations.",
+            self.log_path,
+        )
         architecture, self.compile_applied, compile_message = maybe_compile_model(
             architecture,
             device=self.device,
@@ -265,11 +270,19 @@ class mmTrainer(BaseTrainer):
 
         for epoch_idx in range(start_epoch, self.num_epochs + 1):
             epoch_start_time = time.perf_counter()
+            log_message(
+                f"Epoch {epoch_idx}/{self.num_epochs} - starting training loop",
+                self.log_path,
+            )
 
             train_metrics = []
             for batch_idx, batch in enumerate(train_dataloader, start=1):
                 train_metrics.append(self.train_step(batch, batch_idx))
 
+            log_message(
+                f"Epoch {epoch_idx}/{self.num_epochs} - starting validation loop",
+                self.log_path,
+            )
             val_metrics = []
             for batch_idx, batch in enumerate(val_dataloader, start=1):
                 val_metrics.append(self.validate_step(batch, batch_idx))

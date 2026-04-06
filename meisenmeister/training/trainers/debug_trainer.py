@@ -18,6 +18,7 @@ class mmTrainer_Debug(mmTrainer):
         continue_training: bool = False,
         weights_path=None,
         experiment_postfix: str | None = None,
+        compile_enabled: bool = True,
     ) -> None:
         super().__init__(
             dataset_id=dataset_id,
@@ -33,6 +34,7 @@ class mmTrainer_Debug(mmTrainer):
             continue_training=continue_training,
             weights_path=weights_path,
             experiment_postfix=experiment_postfix,
+            compile_enabled=compile_enabled,
         )
 
 

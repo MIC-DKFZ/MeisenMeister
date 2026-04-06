@@ -185,6 +185,11 @@ def mm_train() -> None:
         choices=("last", "best"),
         help="Skip training and run final validation only. `--val` uses model_last.pt and writes eval_last.json; `--val best` uses model_best.pt and writes eval_best.json.",
     )
+    parser.add_argument(
+        "--disable-compile",
+        action="store_true",
+        help="Disable torch.compile for training.",
+    )
     args = parser.parse_args()
     train(
         args.d,
@@ -195,6 +200,7 @@ def mm_train() -> None:
         weights_path=args.weights,
         experiment_postfix=args.postfix,
         val=args.val,
+        compile_enabled=not args.disable_compile,
     )
 
 

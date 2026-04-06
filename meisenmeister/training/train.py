@@ -25,6 +25,7 @@ def train(
     weights_path: str | None = None,
     experiment_postfix: str | None = None,
     val: str | None = None,
+    compile_enabled: bool = True,
 ) -> None:
     if not 0 <= d <= 999:
         raise ValueError(f"Dataset id must be between 0 and 999, got {d}")
@@ -62,6 +63,7 @@ def train(
         continue_training=continue_training,
         weights_path=None if weights_path is None else Path(weights_path),
         experiment_postfix=experiment_postfix,
+        compile_enabled=compile_enabled,
     )
     if val is None:
         trainer.fit()
