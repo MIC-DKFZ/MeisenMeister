@@ -159,6 +159,11 @@ def mm_train() -> None:
         help="Trainer class name registered under meisenmeister.training.trainers.",
     )
     parser.add_argument(
+        "--num-workers",
+        type=int,
+        help="Number of DataLoader worker processes. Defaults to an optimized training preset for this machine.",
+    )
+    parser.add_argument(
         "-c",
         "--continue-training",
         action="store_true",
@@ -185,6 +190,7 @@ def mm_train() -> None:
         args.d,
         fold=args.fold,
         trainer_name=args.trainer,
+        num_workers=args.num_workers,
         continue_training=args.continue_training,
         weights_path=args.weights,
         experiment_postfix=args.postfix,

@@ -13,6 +13,7 @@ from .checkpoints import (
     save_checkpoint,
     validate_resume_state,
 )
+from .dataloading import build_dataloader_kwargs, resolve_num_workers
 from .evaluation import (
     build_final_validation_evaluation,
     run_final_validation_evaluation,
@@ -34,6 +35,7 @@ __all__ = [
     "aggregate_validation_classification_metrics",
     "append_history",
     "build_experiment_paths",
+    "build_dataloader_kwargs",
     "build_final_validation_evaluation",
     "build_trainer_config",
     "compute_classification_metrics",
@@ -46,6 +48,7 @@ __all__ = [
     "log_message",
     "prepare_output_dir",
     "restore_checkpoint_payload",
+    "resolve_num_workers",
     "run_final_validation_evaluation",
     "save_checkpoint",
     "save_final_validation_evaluation",

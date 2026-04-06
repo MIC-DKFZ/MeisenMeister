@@ -27,6 +27,7 @@ from meisenmeister.utils.training import (
     aggregate_epoch_metrics,
     aggregate_validation_classification_metrics,
     append_history,
+    build_dataloader_kwargs,
     build_experiment_paths,
     build_trainer_config,
     compute_ema,
@@ -36,6 +37,7 @@ from meisenmeister.utils.training import (
     load_resume_checkpoint,
     log_message,
     prepare_output_dir,
+    resolve_num_workers,
     restore_checkpoint_payload,
     run_final_validation_evaluation,
     save_checkpoint,
@@ -63,7 +65,7 @@ class mmTrainer(BaseTrainer):
         architecture_name: str | None = None,
         num_epochs: int = 100,
         batch_size: int = 2,
-        num_workers: int = 0,
+        num_workers: int | None = None,
         shuffle: bool = True,
         initial_lr: float = 3e-4,
         weight_decay: float = 3e-5,
@@ -75,7 +77,7 @@ class mmTrainer(BaseTrainer):
         self.results_dir = results_dir
         self.num_epochs = num_epochs
         self.batch_size = batch_size
-        self.num_workers = num_workers
+        self.num_workers = resolve_num_workers(num_workers)
         self.shuffle = shuffle
         self.architecture_name = architecture_name or self.ARCHITECTURE_NAME
         self.initial_lr = initial_lr
@@ -190,6 +192,14 @@ class mmTrainer(BaseTrainer):
         log_message(f"Epochs: {self.num_epochs}", self.log_path)
         log_message(f"Initial LR: {self.initial_lr}", self.log_path)
         log_message(f"Weight decay: {self.weight_decay}", self.log_path)
+        log_message(f"DataLoader workers: {self.num_workers}", self.log_path)
+        log_message(
+            f"DataLoader persistent_workers: {self.num_workers > 0}", self.log_path
+        )
+        log_message(
+            f"DataLoader prefetch_factor: {4 if self.num_workers > 0 else None}",
+            self.log_path,
+        )
 
         if start_epoch > self.num_epochs:
             log_message(
@@ -475,19 +485,21 @@ class mmTrainer(BaseTrainer):
     def get_train_dataloader(self):
         return DataLoader(
             self.get_train_dataset(),
-            batch_size=self.batch_size,
-            shuffle=self.shuffle,
-            num_workers=self.num_workers,
-            pin_memory=torch.cuda.is_available(),
+            **build_dataloader_kwargs(
+                batch_size=self.batch_size,
+                shuffle=self.shuffle,
+                num_workers=self.num_workers,
+            ),
         )
 
     def get_val_dataloader(self):
         return DataLoader(
             self.get_val_dataset(),
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=self.num_workers,
-            pin_memory=torch.cuda.is_available(),
+            **build_dataloader_kwargs(
+                batch_size=self.batch_size,
+                shuffle=False,
+                num_workers=self.num_workers,
+            ),
         )
 
     def get_optimizer(self):
