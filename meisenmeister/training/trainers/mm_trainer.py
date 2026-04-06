@@ -11,7 +11,12 @@ from torch.utils.data import DataLoader
 from meisenmeister.architectures import get_architecture_class
 from meisenmeister.data_augmentations import (
     Compose3D,
+    Contrast3D,
     FlipAxes3D,
+    GaussianNoise3D,
+    MultiplicativeBrightness3D,
+    RandomRotation3D,
+    RandomScaling3D,
     RandomShiftWithinMargin3D,
     RemoveMargin3D,
 )
@@ -412,7 +417,34 @@ class mmTrainer(BaseTrainer):
                         probability=0.5,
                         max_shift_voxels=max_shift_voxels,
                     ),
-                    FlipAxes3D(probability=0.5, axes=(0, 1, 2)),
+                    RandomRotation3D(
+                        probability=0.3,
+                        max_rotation_degrees=(15.0, 15.0, 15.0),
+                    ),
+                    RandomScaling3D(
+                        probability=0.2,
+                        scaling=(0.7, 1.4),
+                    ),
+                    MultiplicativeBrightness3D(
+                        probability=0.15,
+                        multiplier_range=(0.75, 1.25),
+                        p_per_channel=1.0,
+                        synchronize_channels=True,
+                    ),
+                    Contrast3D(
+                        probability=0.15,
+                        contrast_range=(0.75, 1.25),
+                        preserve_range=True,
+                        p_per_channel=1.0,
+                        synchronize_channels=True,
+                    ),
+                    GaussianNoise3D(
+                        probability=0.1,
+                        noise_variance=(0.0, 0.1),
+                        p_per_channel=1.0,
+                        synchronize_channels=True,
+                    ),
+                    FlipAxes3D(probability=1.0, axes=(0, 1, 2)),
                 ]
             )
         return self._train_augmentation_pipeline
