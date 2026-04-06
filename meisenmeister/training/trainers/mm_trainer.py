@@ -185,6 +185,7 @@ class mmTrainer(BaseTrainer):
         log_message(f"Results dir: {self.fold_dir}", self.log_path)
         log_message(f"Train samples: {len(train_dataset)}", self.log_path)
         log_message(f"Val samples: {len(val_dataset)}", self.log_path)
+        log_message(f"Batch size: {self.batch_size}", self.log_path)
         log_message(f"Architecture: {architecture.__class__.__name__}", self.log_path)
         log_message(f"Loss: {loss_fn.__class__.__name__}", self.log_path)
         log_message(f"Optimizer: {optimizer.__class__.__name__}", self.log_path)
