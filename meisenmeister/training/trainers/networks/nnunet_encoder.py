@@ -1,7 +1,53 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import torch
+
 from meisenmeister.architectures import get_architecture_class
 from meisenmeister.training.trainers.mm_trainer import mmTrainer
+
+
+class _WarmupPolyLRScheduler(torch.optim.lr_scheduler._LRScheduler):
+    def __init__(
+        self,
+        optimizer: torch.optim.Optimizer,
+        initial_lr: float,
+        max_lr: float,
+        num_epochs: int,
+        warmup_epochs: int,
+        poly_exp: float,
+        last_epoch: int = -1,
+    ) -> None:
+        if num_epochs < 1:
+            raise ValueError(f"num_epochs must be at least 1, got {num_epochs}")
+        if warmup_epochs < 1:
+            raise ValueError(f"warmup_epochs must be at least 1, got {warmup_epochs}")
+        if warmup_epochs > num_epochs:
+            raise ValueError("warmup_epochs must be less than or equal to num_epochs")
+        if initial_lr <= 0.0 or max_lr <= 0.0:
+            raise ValueError("initial_lr and max_lr must be positive")
+        if poly_exp <= 0.0:
+            raise ValueError(f"poly_exp must be positive, got {poly_exp}")
+
+        self.initial_lr = float(initial_lr)
+        self.max_lr = float(max_lr)
+        self.num_epochs = int(num_epochs)
+        self.warmup_epochs = int(warmup_epochs)
+        self.poly_exp = float(poly_exp)
+        super().__init__(optimizer, last_epoch=last_epoch)
+
+    def get_lr(self) -> list[float]:
+        current_epoch = self.last_epoch + 1
+        if current_epoch <= self.warmup_epochs:
+            warmup_progress = current_epoch / float(self.warmup_epochs)
+            lr = self.initial_lr + (self.max_lr - self.initial_lr) * warmup_progress
+        else:
+            decay_steps = max(1, self.num_epochs - self.warmup_epochs)
+            progress = (current_epoch - self.warmup_epochs) / float(decay_steps)
+            progress = min(max(progress, 0.0), 1.0)
+            lr = self.max_lr * ((1.0 - progress) ** self.poly_exp)
+        return [lr for _ in self.optimizer.param_groups]
 
 
 class mmTrainer_NNUNetEncoder(mmTrainer):
@@ -67,3 +113,67 @@ class mmTrainer_NNUNetEncoder(mmTrainer):
                 f"{self.architecture_name} requires target_shape divisible by "
                 f"{list(required_divisibility)}, got {resolved_target_shape}"
             )
+
+
+class mmTrainer_NNUNetEncoder_Finetune(mmTrainer_NNUNetEncoder):
+    def __init__(
+        self,
+        dataset_id,
+        fold,
+        dataset_dir: Path,
+        preprocessed_dataset_dir: Path,
+        results_dir: Path,
+        architecture_name: str | None = None,
+        continue_training: bool = False,
+        weights_path=None,
+        experiment_postfix: str | None = None,
+    ) -> None:
+        super().__init__(
+            dataset_id=dataset_id,
+            fold=fold,
+            dataset_dir=dataset_dir,
+            preprocessed_dataset_dir=preprocessed_dataset_dir,
+            results_dir=results_dir,
+            architecture_name=architecture_name,
+            continue_training=continue_training,
+            weights_path=weights_path,
+            experiment_postfix=experiment_postfix,
+        )
+        self.num_epochs = 100
+        self.initial_lr = 1e-5
+        self.max_lr = 1e-3
+        self.warmup_epochs = 10
+        self.weight_decay = 3e-5
+        self.poly_exp = 0.9
+        self._optimizer = None
+        self._scheduler = None
+
+    def get_optimizer(self):
+        if self._optimizer is None:
+            architecture = self.get_architecture()
+            parameters = list(architecture.parameters())
+            if not parameters:
+                raise ValueError(
+                    f"Architecture '{architecture.__class__.__name__}' has no trainable parameters"
+                )
+            self._optimizer = torch.optim.SGD(
+                parameters,
+                lr=self.initial_lr,
+                weight_decay=self.weight_decay,
+                momentum=0.99,
+                nesterov=True,
+            )
+        return self._optimizer
+
+    def get_scheduler(self):
+        if self._scheduler is None:
+            optimizer = self.get_optimizer()
+            self._scheduler = _WarmupPolyLRScheduler(
+                optimizer=optimizer,
+                initial_lr=self.initial_lr,
+                max_lr=self.max_lr,
+                num_epochs=self.num_epochs,
+                warmup_epochs=self.warmup_epochs,
+                poly_exp=self.poly_exp,
+            )
+        return self._scheduler

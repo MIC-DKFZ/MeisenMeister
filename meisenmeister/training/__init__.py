@@ -17,7 +17,10 @@ from .registry import (
 from .splits import create_five_fold_splits, get_fold_sample_ids, load_splits
 from .train import train
 from .trainers.mm_trainer import mmTrainer
-from .trainers.networks.nnunet_encoder import mmTrainer_NNUNetEncoder
+from .trainers.networks.nnunet_encoder import (
+    mmTrainer_NNUNetEncoder,
+    mmTrainer_NNUNetEncoder_Finetune,
+)
 
 __all__ = [
     "BaseArchitecture",
@@ -32,6 +35,7 @@ __all__ = [
     "load_splits",
     "mmTrainer",
     "mmTrainer_NNUNetEncoder",
+    "mmTrainer_NNUNetEncoder_Finetune",
     "predict",
     "predict_from_modelfolder",
     "get_available_trainer_names",
