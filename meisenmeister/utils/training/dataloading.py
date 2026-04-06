@@ -5,7 +5,7 @@ import os
 import torch
 
 DEFAULT_NUM_WORKERS = 8
-DEFAULT_PREFETCH_FACTOR = 4
+DEFAULT_PREFETCH_FACTOR = 2
 
 
 def resolve_num_workers(requested_num_workers: int | None) -> int:
