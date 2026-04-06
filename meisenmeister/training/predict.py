@@ -24,6 +24,7 @@ from meisenmeister.utils import (
     discover_case_files,
     find_dataset_dir,
     load_dataset_json,
+    maybe_compile_model,
     require_global_paths_set,
     verify_required_global_paths_set,
 )
@@ -162,7 +163,8 @@ def _load_model_from_checkpoint_payload(
     checkpoint_payload: dict,
     architecture_name: str,
     device: torch.device,
-) -> torch.nn.Module:
+    compile_model: bool,
+) -> tuple[torch.nn.Module, bool, str]:
     trainer_config = checkpoint_payload.get("trainer_config", {})
     in_channels = trainer_config.get("in_channels")
     num_classes = trainer_config.get("num_classes")
@@ -177,7 +179,12 @@ def _load_model_from_checkpoint_payload(
     ).to(device)
     model.load_state_dict(checkpoint_payload["model_state_dict"])
     model.eval()
-    return model
+    model, compile_applied, compile_status_message = maybe_compile_model(
+        model,
+        device=device,
+        enabled=compile_model,
+    )
+    return model, compile_applied, compile_status_message
 
 
 def _load_fold_predictors_from_experiment_dir(
@@ -186,6 +193,7 @@ def _load_fold_predictors_from_experiment_dir(
     architecture_name: str,
     folds: list[int],
     checkpoint: str,
+    compile_model: bool,
 ) -> list[dict]:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     predictors = []
@@ -196,16 +204,21 @@ def _load_fold_predictors_from_experiment_dir(
             checkpoint=checkpoint,
         )
         checkpoint_payload = _load_checkpoint_payload(checkpoint_path)
-        model = _load_model_from_checkpoint_payload(
-            checkpoint_payload=checkpoint_payload,
-            architecture_name=architecture_name,
-            device=device,
+        model, compile_applied, compile_status_message = (
+            _load_model_from_checkpoint_payload(
+                checkpoint_payload=checkpoint_payload,
+                architecture_name=architecture_name,
+                device=device,
+                compile_model=compile_model,
+            )
         )
         predictors.append(
             {
                 "fold": fold,
                 "device": device,
                 "checkpoint_path": str(checkpoint_path),
+                "compile_applied": compile_applied,
+                "compile_status_message": compile_status_message,
                 "model": model,
             }
         )
@@ -223,6 +236,7 @@ def _load_fold_predictors(
     experiment_postfix: str | None,
     folds: list[int],
     checkpoint: str,
+    compile_model: bool,
 ) -> list[dict]:
     experiment_dir = build_experiment_paths(
         results_dir=results_dir,
@@ -237,6 +251,7 @@ def _load_fold_predictors(
         architecture_name=architecture_name,
         folds=folds,
         checkpoint=checkpoint,
+        compile_model=compile_model,
     )
 
 
@@ -252,6 +267,7 @@ def _build_prediction_payload(
     folds: list[int],
     checkpoint: str,
     use_tta: bool,
+    compile_enabled: bool,
 ) -> dict:
     return {
         "config": {
@@ -265,6 +281,7 @@ def _build_prediction_payload(
             "folds": folds,
             "checkpoint": checkpoint,
             "tta_enabled": bool(use_tta),
+            "compile_enabled": bool(compile_enabled),
         },
         "cases": {},
     }
@@ -285,6 +302,7 @@ def _run_prediction(
     folds: list[int],
     checkpoint: str,
     use_tta: bool,
+    compile_model: bool,
 ) -> Path:
     output_path.mkdir(parents=True, exist_ok=True)
     case_files_by_case_id = discover_case_files(input_path, dataset_json)
@@ -300,6 +318,10 @@ def _run_prediction(
         folds=folds,
         checkpoint=checkpoint,
         use_tta=use_tta,
+        compile_enabled=all(
+            fold_predictor.get("compile_applied", False)
+            for fold_predictor in fold_predictors
+        ),
     )
 
     for case_id, case_files in sorted(case_files_by_case_id.items()):
@@ -382,6 +404,7 @@ def predict(
     experiment_postfix: str | None = None,
     checkpoint: str = "best",
     use_tta: bool = True,
+    compile_model: bool = True,
 ) -> Path:
     if not 0 <= d <= 999:
         raise ValueError(f"Dataset id must be between 0 and 999, got {d}")
@@ -412,6 +435,7 @@ def predict(
         experiment_postfix=experiment_postfix,
         folds=fold_values,
         checkpoint=checkpoint,
+        compile_model=compile_model,
     )
     return _run_prediction(
         dataset_id=dataset_id,
@@ -427,6 +451,7 @@ def predict(
         folds=fold_values,
         checkpoint=checkpoint,
         use_tta=use_tta,
+        compile_model=compile_model,
     )
 
 
@@ -437,6 +462,7 @@ def predict_from_modelfolder(
     folds: list[int],
     checkpoint: str = "best",
     use_tta: bool = True,
+    compile_model: bool = True,
 ) -> Path:
     if checkpoint not in {"best", "last"}:
         raise ValueError(
@@ -455,6 +481,7 @@ def predict_from_modelfolder(
         architecture_name=metadata["architecture_name"],
         folds=fold_values,
         checkpoint=checkpoint,
+        compile_model=compile_model,
     )
     return _run_prediction(
         dataset_id=metadata["dataset_id"],
@@ -470,4 +497,5 @@ def predict_from_modelfolder(
         folds=fold_values,
         checkpoint=checkpoint,
         use_tta=use_tta,
+        compile_model=compile_model,
     )

@@ -249,6 +249,11 @@ def mm_predict() -> None:
         action="store_true",
         help="Disable default flip test-time augmentation.",
     )
+    parser.add_argument(
+        "--no-compile",
+        action="store_true",
+        help="Disable torch.compile for inference.",
+    )
     args = parser.parse_args()
     predict(
         args.d,
@@ -259,6 +264,7 @@ def mm_predict() -> None:
         experiment_postfix=args.postfix,
         checkpoint=args.checkpoint,
         use_tta=not args.no_tta,
+        compile_model=not args.no_compile,
     )
 
 
@@ -302,6 +308,11 @@ def mm_predict_from_modelfolder() -> None:
         action="store_true",
         help="Disable default flip test-time augmentation.",
     )
+    parser.add_argument(
+        "--no-compile",
+        action="store_true",
+        help="Disable torch.compile for inference.",
+    )
     args = parser.parse_args()
     predict_from_modelfolder(
         args.model_folder,
@@ -310,6 +321,7 @@ def mm_predict_from_modelfolder() -> None:
         folds=args.folds,
         checkpoint=args.checkpoint,
         use_tta=not args.no_tta,
+        compile_model=not args.no_compile,
     )
 
 

@@ -10,6 +10,7 @@ from .checkpoints import (
     build_trainer_config,
     load_resume_checkpoint,
     restore_checkpoint_payload,
+    restore_rng_state,
     save_checkpoint,
     validate_resume_state,
 )
@@ -34,6 +35,9 @@ from .performance import (
     configure_training_performance,
     create_grad_scaler,
     is_amp_enabled,
+    maybe_compile_model,
+    resolve_compile_enabled,
+    unwrap_model,
 )
 
 __all__ = [
@@ -56,7 +60,10 @@ __all__ = [
     "is_amp_enabled",
     "load_resume_checkpoint",
     "log_message",
+    "maybe_compile_model",
     "prepare_output_dir",
+    "restore_rng_state",
+    "resolve_compile_enabled",
     "restore_checkpoint_payload",
     "resolve_num_workers",
     "run_final_validation_evaluation",
@@ -64,5 +71,6 @@ __all__ = [
     "save_final_validation_evaluation",
     "save_training_curves",
     "should_update_best",
+    "unwrap_model",
     "validate_resume_state",
 ]

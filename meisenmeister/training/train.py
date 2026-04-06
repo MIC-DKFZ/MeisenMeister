@@ -8,6 +8,7 @@ from meisenmeister.utils import (
     build_experiment_paths,
     find_dataset_dir,
     log_message,
+    maybe_compile_model,
     require_global_paths_set,
     run_final_validation_evaluation,
     verify_required_global_paths_set,
@@ -90,9 +91,22 @@ def train(
         map_location="cpu",
         weights_only=False,
     )
-    trainer.get_architecture().load_state_dict(checkpoint["model_state_dict"])
+    architecture = trainer.get_architecture()
+    architecture.load_state_dict(checkpoint["model_state_dict"])
+    architecture, compile_applied, compile_status_message = maybe_compile_model(
+        architecture,
+        device=trainer.device,
+        enabled=getattr(trainer, "compile_enabled", True),
+    )
+    trainer._architecture = architecture
+    trainer.compile_applied = compile_applied
+    trainer.compile_status_message = compile_status_message
     log_message(
         f"Loaded {'last' if val == 'last' else 'best'} checkpoint from {checkpoint_path}",
+        experiment_paths["log_path"],
+    )
+    log_message(
+        f"Torch compile applied: {compile_applied} ({compile_status_message})",
         experiment_paths["log_path"],
     )
     run_final_validation_evaluation(

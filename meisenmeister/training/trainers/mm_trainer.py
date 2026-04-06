@@ -40,13 +40,16 @@ from meisenmeister.utils.training import (
     is_amp_enabled,
     load_resume_checkpoint,
     log_message,
+    maybe_compile_model,
     prepare_output_dir,
+    resolve_compile_enabled,
     resolve_num_workers,
-    restore_checkpoint_payload,
+    restore_rng_state,
     run_final_validation_evaluation,
     save_checkpoint,
     save_training_curves,
     should_update_best,
+    unwrap_model,
     validate_resume_state,
 )
 
@@ -93,6 +96,11 @@ class mmTrainer(BaseTrainer):
         configure_training_performance(self.device)
         self.amp_enabled = is_amp_enabled(self.device)
         self.grad_scaler = create_grad_scaler(self.device)
+        self.compile_enabled, self.compile_status_message = resolve_compile_enabled(
+            self.device,
+            enabled=True,
+        )
+        self.compile_applied = False
         self.split_sample_ids = get_fold_sample_ids(preprocessed_dataset_dir, fold)
         experiment_paths = build_experiment_paths(
             results_dir=self.results_dir,
@@ -162,21 +170,17 @@ class mmTrainer(BaseTrainer):
         val_dataloader = self.get_val_dataloader()
         architecture = self.get_architecture()
         loss_fn = self.get_loss()
-        optimizer = self.get_optimizer()
-        scheduler = self.get_scheduler()
 
         start_epoch = 1
         if self._resume_state is not None:
-            restore_checkpoint_payload(self, self._resume_state)
-            optimizer = self.get_optimizer()
-            scheduler = self.get_scheduler()
+            architecture.load_state_dict(self._resume_state["model_state_dict"])
             start_epoch = int(self._resume_state["last_completed_epoch"]) + 1
             log_message(
                 f"Resuming training from epoch {start_epoch} in {self.fold_dir}",
                 self.log_path,
             )
         elif self.weights_path is not None:
-            self.get_architecture().load_initial_weights(
+            architecture.load_initial_weights(
                 path=self.weights_path,
                 device=self.device,
             )
@@ -184,6 +188,26 @@ class mmTrainer(BaseTrainer):
                 f"Initialized model weights from {self.weights_path}",
                 self.log_path,
             )
+
+        architecture, self.compile_applied, compile_message = maybe_compile_model(
+            architecture,
+            device=self.device,
+            enabled=self.compile_enabled,
+        )
+        self._architecture = architecture
+        self.compile_status_message = compile_message
+        optimizer = self.get_optimizer()
+        scheduler = self.get_scheduler()
+
+        if self._resume_state is not None:
+            optimizer.load_state_dict(self._resume_state["optimizer_state_dict"])
+            scheduler.load_state_dict(self._resume_state["scheduler_state_dict"])
+            grad_scaler_state_dict = self._resume_state.get("grad_scaler_state_dict")
+            if self.grad_scaler is not None and grad_scaler_state_dict is not None:
+                self.grad_scaler.load_state_dict(grad_scaler_state_dict)
+            self._history = self._resume_state["history"]
+            self._best_state = self._resume_state["best_state"]
+            restore_rng_state(self._resume_state.get("rng_state"))
 
         log_message(f"Trainer: {self.__class__.__name__}", self.log_path)
         log_message(f"Dataset id: {self.dataset_id}", self.log_path)
@@ -201,6 +225,18 @@ class mmTrainer(BaseTrainer):
         log_message(f"Initial LR: {self.initial_lr}", self.log_path)
         log_message(f"Weight decay: {self.weight_decay}", self.log_path)
         log_message(f"AMP enabled: {self.amp_enabled}", self.log_path)
+        log_message(
+            f"Torch compile enabled: {self.compile_enabled}",
+            self.log_path,
+        )
+        log_message(
+            f"Torch compile applied: {self.compile_applied}",
+            self.log_path,
+        )
+        log_message(
+            f"Torch compile status: {self.compile_status_message}",
+            self.log_path,
+        )
         log_message(f"DataLoader workers: {self.num_workers}", self.log_path)
         log_message(
             f"DataLoader persistent_workers: {self.num_workers > 0}", self.log_path
@@ -321,11 +357,11 @@ class mmTrainer(BaseTrainer):
                         initial_lr=self.initial_lr,
                         weight_decay=self.weight_decay,
                         device=self.device,
-                        architecture=self.get_architecture(),
+                        architecture=unwrap_model(self.get_architecture()),
                     ),
                     history=self._history,
                     best_state=self._best_state,
-                    model_state_dict=self.get_architecture().state_dict(),
+                    model_state_dict=unwrap_model(self.get_architecture()).state_dict(),
                     optimizer_state_dict=self.get_optimizer().state_dict(),
                     scheduler_state_dict=self.get_scheduler().state_dict(),
                     grad_scaler_state_dict=(
@@ -363,11 +399,11 @@ class mmTrainer(BaseTrainer):
                     initial_lr=self.initial_lr,
                     weight_decay=self.weight_decay,
                     device=self.device,
-                    architecture=self.get_architecture(),
+                    architecture=unwrap_model(self.get_architecture()),
                 ),
                 history=self._history,
                 best_state=self._best_state,
-                model_state_dict=self.get_architecture().state_dict(),
+                model_state_dict=unwrap_model(self.get_architecture()).state_dict(),
                 optimizer_state_dict=self.get_optimizer().state_dict(),
                 scheduler_state_dict=self.get_scheduler().state_dict(),
                 grad_scaler_state_dict=(
