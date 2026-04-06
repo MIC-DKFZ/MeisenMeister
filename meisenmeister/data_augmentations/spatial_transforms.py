@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 import numpy as np
 import SimpleITK as sitk
+from scipy.ndimage import affine_transform
 
 
 class FlipAxes3D:
@@ -133,59 +134,32 @@ class RemoveMargin3D:
 
 
 def _resample_channel_with_scale(channel: np.ndarray, scale: float) -> np.ndarray:
-    depth, height, width = channel.shape
-    center = (np.asarray(channel.shape, dtype=np.float32) - 1.0) / 2.0
-
-    z = np.arange(depth, dtype=np.float32)
-    y = np.arange(height, dtype=np.float32)
-    x = np.arange(width, dtype=np.float32)
-    zz, yy, xx = np.meshgrid(z, y, x, indexing="ij")
-
-    src_z = center[0] + (zz - center[0]) / scale
-    src_y = center[1] + (yy - center[1]) / scale
-    src_x = center[2] + (xx - center[2]) / scale
-
-    valid = (
-        (src_z >= 0.0)
-        & (src_z <= depth - 1)
-        & (src_y >= 0.0)
-        & (src_y <= height - 1)
-        & (src_x >= 0.0)
-        & (src_x <= width - 1)
+    center_index = _get_image_center_index(channel.shape)
+    matrix = np.eye(3, dtype=np.float32) / scale
+    offset = center_index - matrix @ center_index
+    scaled = affine_transform(
+        channel,
+        matrix=matrix,
+        offset=offset,
+        output_shape=channel.shape,
+        order=1,
+        mode="constant",
+        cval=0.0,
+        prefilter=False,
     )
+    return scaled.astype(channel.dtype, copy=False)
 
-    z0 = np.clip(np.floor(src_z).astype(np.int64), 0, depth - 1)
-    y0 = np.clip(np.floor(src_y).astype(np.int64), 0, height - 1)
-    x0 = np.clip(np.floor(src_x).astype(np.int64), 0, width - 1)
-    z1 = np.clip(z0 + 1, 0, depth - 1)
-    y1 = np.clip(y0 + 1, 0, height - 1)
-    x1 = np.clip(x0 + 1, 0, width - 1)
 
-    wz = src_z - z0
-    wy = src_y - y0
-    wx = src_x - x0
+def _get_image_center_index(
+    shape: Sequence[int] | tuple[int, int, int],
+) -> np.ndarray:
+    center_index = np.asarray(shape, dtype=np.float32)
+    return (center_index - 1.0) / 2.0
 
-    c000 = channel[z0, y0, x0]
-    c001 = channel[z0, y0, x1]
-    c010 = channel[z0, y1, x0]
-    c011 = channel[z0, y1, x1]
-    c100 = channel[z1, y0, x0]
-    c101 = channel[z1, y0, x1]
-    c110 = channel[z1, y1, x0]
-    c111 = channel[z1, y1, x1]
 
-    output = (
-        c000 * (1.0 - wz) * (1.0 - wy) * (1.0 - wx)
-        + c001 * (1.0 - wz) * (1.0 - wy) * wx
-        + c010 * (1.0 - wz) * wy * (1.0 - wx)
-        + c011 * (1.0 - wz) * wy * wx
-        + c100 * wz * (1.0 - wy) * (1.0 - wx)
-        + c101 * wz * (1.0 - wy) * wx
-        + c110 * wz * wy * (1.0 - wx)
-        + c111 * wz * wy * wx
-    ).astype(channel.dtype, copy=False)
-    output[~valid] = 0.0
-    return output
+def _get_image_center_point(image: sitk.Image) -> tuple[float, float, float]:
+    center_index = _get_image_center_index(image.GetSize()).tolist()
+    return tuple(image.TransformContinuousIndexToPhysicalPoint(center_index))
 
 
 def _rotate_channel_with_angles(
@@ -194,8 +168,7 @@ def _rotate_channel_with_angles(
 ) -> np.ndarray:
     rotation_z, rotation_y, rotation_x = angles_degrees
     image = sitk.GetImageFromArray(channel.astype(np.float32, copy=False))
-    center_index = [(axis_size - 1) / 2.0 for axis_size in image.GetSize()]
-    center_point = image.TransformContinuousIndexToPhysicalPoint(center_index)
+    center_point = _get_image_center_point(image)
 
     transform = sitk.Euler3DTransform()
     transform.SetCenter(center_point)

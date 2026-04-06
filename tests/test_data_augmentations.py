@@ -201,6 +201,46 @@ class DataAugmentationTests(unittest.TestCase):
         self.assertEqual(float(output["image"][0, 1, 1, 1]), 1.0)
         self.assertEqual(float(output["image"][0, 0, 0, 0]), 0.0)
 
+    def test_random_scaling3d_preserves_shape_dtype_and_finite_values(self) -> None:
+        sample = {
+            "image": np.arange(54, dtype=np.float32).reshape(2, 3, 3, 3),
+        }
+        transform = RandomScaling3D(probability=1.0, scaling=(1.2, 1.2))
+
+        with patch("numpy.random.random", return_value=0.0):
+            output = transform(sample)
+
+        self.assertEqual(output["image"].shape, sample["image"].shape)
+        self.assertEqual(output["image"].dtype, sample["image"].dtype)
+        self.assertTrue(np.isfinite(output["image"]).all())
+
+    def test_random_scaling3d_identity_scaling_preserves_values(self) -> None:
+        sample = {
+            "image": np.arange(54, dtype=np.float32).reshape(2, 3, 3, 3),
+        }
+        transform = RandomScaling3D(probability=1.0, scaling=(1.0, 1.0))
+
+        with patch("numpy.random.random", return_value=0.0):
+            output = transform(sample)
+
+        self.assertTrue(np.allclose(output["image"], sample["image"], atol=1e-6))
+
+    def test_random_scaling3d_zoom_in_stays_centered(self) -> None:
+        sample = {
+            "image": np.zeros((1, 5, 5, 5), dtype=np.float32),
+        }
+        sample["image"][0, 2, 2, 2] = 1.0
+        transform = RandomScaling3D(probability=1.0, scaling=(1.4, 1.4))
+
+        with patch("numpy.random.random", return_value=0.0):
+            output = transform(sample)
+
+        max_index = np.unravel_index(
+            np.argmax(output["image"][0]), output["image"][0].shape
+        )
+        self.assertEqual(max_index, (2, 2, 2))
+        self.assertGreater(float(output["image"][0, 2, 2, 2]), 0.0)
+
     def test_random_scaling3d_zoom_in_changes_values_while_preserving_shape(
         self,
     ) -> None:
