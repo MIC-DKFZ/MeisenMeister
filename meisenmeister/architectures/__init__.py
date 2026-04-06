@@ -1,4 +1,5 @@
 from .base_architecture import BaseArchitecture
+from .nnunet_encoder import ResidualEncoderClsNetwork
 from .registry import (
     get_architecture_class,
     get_architecture_registry,
@@ -8,6 +9,7 @@ from .resnet3d import ResNet3D18
 
 __all__ = [
     "BaseArchitecture",
+    "ResidualEncoderClsNetwork",
     "ResNet3D18",
     "get_architecture_class",
     "get_architecture_registry",

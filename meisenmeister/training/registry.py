@@ -9,7 +9,7 @@ from meisenmeister.training.base_trainer import BaseTrainer
 
 
 def _iter_trainer_modules():
-    for module_info in pkgutil.iter_modules(
+    for module_info in pkgutil.walk_packages(
         trainer_package.__path__,
         prefix=f"{trainer_package.__name__}.",
     ):

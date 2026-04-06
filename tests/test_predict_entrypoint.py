@@ -117,6 +117,10 @@ class PredictEntrypointTests(unittest.TestCase):
 
             with (
                 patch(
+                    "meisenmeister.training.predict._resolve_trainer_architecture_name",
+                    return_value="ResNet3D18",
+                ),
+                patch(
                     "meisenmeister.training.predict.verify_required_global_paths_set",
                     return_value={
                         "mm_raw": root,
@@ -194,6 +198,7 @@ class PredictEntrypointTests(unittest.TestCase):
                     input_dir=str(input_dir),
                     output_dir=str(output_dir),
                     folds=[0, 1],
+                    trainer_name="mmTrainer",
                     checkpoint="best",
                     use_tta=True,
                 )

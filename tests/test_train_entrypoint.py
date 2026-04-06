@@ -11,6 +11,7 @@ train_module = importlib.import_module("meisenmeister.training.train")
 
 class _MockTrainer:
     last_instance = None
+    ARCHITECTURE_NAME = "MockArchitecture"
 
     def __init__(
         self,
@@ -88,7 +89,6 @@ class TrainEntrypointTests(unittest.TestCase):
                     1,
                     fold=0,
                     trainer_name="mmTrainer_Debug",
-                    architecture_name="ResNet3D18",
                 )
 
         mock_get_fold_sample_ids.assert_called_once_with(
@@ -99,7 +99,9 @@ class TrainEntrypointTests(unittest.TestCase):
         self.assertIsNotNone(_MockTrainer.last_instance)
         self.assertEqual(_MockTrainer.last_instance.dataset_id, "001")
         self.assertEqual(_MockTrainer.last_instance.fold, 0)
-        self.assertEqual(_MockTrainer.last_instance.architecture_name, "ResNet3D18")
+        self.assertEqual(
+            _MockTrainer.last_instance.architecture_name, "MockArchitecture"
+        )
         self.assertEqual(_MockTrainer.last_instance.dataset_dir, dataset_dir)
         self.assertEqual(
             _MockTrainer.last_instance.preprocessed_dataset_dir,
@@ -155,7 +157,6 @@ class TrainEntrypointTests(unittest.TestCase):
                     1,
                     fold=0,
                     trainer_name="mmTrainer_Debug",
-                    architecture_name="ResNet3D18",
                     val="last",
                 )
 
@@ -218,7 +219,6 @@ class TrainEntrypointTests(unittest.TestCase):
                     1,
                     fold=0,
                     trainer_name="mmTrainer_Debug",
-                    architecture_name="ResNet3D18",
                     val="best",
                 )
 
@@ -266,7 +266,6 @@ class TrainEntrypointTests(unittest.TestCase):
                     1,
                     fold=0,
                     trainer_name="mmTrainer_Debug",
-                    architecture_name="ResNet3D18",
                     continue_training=True,
                 )
 
@@ -309,7 +308,6 @@ class TrainEntrypointTests(unittest.TestCase):
                     1,
                     fold=0,
                     trainer_name="mmTrainer_Debug",
-                    architecture_name="ResNet3D18",
                     weights_path="/tmp/pretrained.pt",
                     experiment_postfix="finetuningNNSSL",
                 )

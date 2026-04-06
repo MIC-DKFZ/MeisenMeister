@@ -124,10 +124,10 @@ Basic example:
 mm_train -d 1 -f 0
 ```
 
-Select a trainer and architecture:
+Select a trainer:
 
 ```bash
-mm_train -d 1 -f 0 --trainer mmTrainer -a ResNet3D18
+mm_train -d 1 -f 0 --trainer mmTrainer
 ```
 
 Resume an existing experiment:
@@ -190,7 +190,7 @@ Example:
 mm_predict_from_modelfolder /shared/Dataset_001_Test/mmTrainer_ResNet3D18 -i /path/to/images -o /path/to/preds -f 0 1 2 3 4
 ```
 
-Training copies `dataset.json` and `mmPlans.json` into the experiment folder automatically so the folder can be shared for inference on another machine.
+Training copies `dataset.json` and `mmPlans.json` into the experiment folder automatically so the folder can be shared for inference on another machine. The trainer decides which architecture is used.
 
 ## A Few Practical Notes
 

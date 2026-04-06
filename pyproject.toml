@@ -12,6 +12,7 @@ license = { file = "LICENSE" }
 dependencies = [
     "blosc2",
     "breastdivider",
+    "dynamic_network_architectures",
     "numpy",
     "SimpleITK",
     "torch",

@@ -41,6 +41,7 @@ from meisenmeister.utils.training import (
 
 
 class mmTrainer(BaseTrainer):
+    ARCHITECTURE_NAME = "ResNet3D18"
     EMA_ALPHA = 0.1
     BEST_SCORE_TOLERANCE = 1e-12
     FINAL_EVAL_N_BOOTSTRAP = 2000
@@ -54,7 +55,7 @@ class mmTrainer(BaseTrainer):
         dataset_dir: Path,
         preprocessed_dataset_dir: Path,
         results_dir: Path,
-        architecture_name: str = "ResNet3D18",
+        architecture_name: str | None = None,
         num_epochs: int = 100,
         batch_size: int = 2,
         num_workers: int = 0,
@@ -71,7 +72,7 @@ class mmTrainer(BaseTrainer):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.shuffle = shuffle
-        self.architecture_name = architecture_name
+        self.architecture_name = architecture_name or self.ARCHITECTURE_NAME
         self.initial_lr = initial_lr
         self.weight_decay = weight_decay
         self.continue_training = continue_training

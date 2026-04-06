@@ -159,12 +159,6 @@ def mm_train() -> None:
         help="Trainer class name registered under meisenmeister.training.trainers.",
     )
     parser.add_argument(
-        "-a",
-        "--architecture",
-        default="ResNet3D18",
-        help="Architecture class name registered under meisenmeister.architectures.",
-    )
-    parser.add_argument(
         "-c",
         "--continue-training",
         action="store_true",
@@ -191,7 +185,6 @@ def mm_train() -> None:
         args.d,
         fold=args.fold,
         trainer_name=args.trainer,
-        architecture_name=args.architecture,
         continue_training=args.continue_training,
         weights_path=args.weights,
         experiment_postfix=args.postfix,
@@ -236,12 +229,6 @@ def mm_predict() -> None:
         help="Trainer class name registered under meisenmeister.training.trainers.",
     )
     parser.add_argument(
-        "-a",
-        "--architecture",
-        default="ResNet3D18",
-        help="Architecture class name registered under meisenmeister.architectures.",
-    )
-    parser.add_argument(
         "--postfix",
         help="Optional suffix appended to the experiment name.",
     )
@@ -263,7 +250,6 @@ def mm_predict() -> None:
         output_dir=args.output_dir,
         folds=args.folds,
         trainer_name=args.trainer,
-        architecture_name=args.architecture,
         experiment_postfix=args.postfix,
         checkpoint=args.checkpoint,
         use_tta=not args.no_tta,

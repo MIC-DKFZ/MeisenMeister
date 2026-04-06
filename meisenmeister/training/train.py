@@ -19,7 +19,6 @@ def train(
     d: int,
     fold: int,
     trainer_name: str = "mmTrainer",
-    architecture_name: str = "ResNet3D18",
     continue_training: bool = False,
     weights_path: str | None = None,
     experiment_postfix: str | None = None,
@@ -49,6 +48,7 @@ def train(
 
     get_fold_sample_ids(preprocessed_dataset_dir, fold)
     trainer_class = get_trainer_class(trainer_name)
+    architecture_name = getattr(trainer_class, "ARCHITECTURE_NAME", "ResNet3D18")
     trainer = trainer_class(
         dataset_id=dataset_id,
         fold=fold,

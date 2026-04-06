@@ -12,6 +12,9 @@ from meisenmeister.training import (
     get_trainer_registry,
 )
 from meisenmeister.training.trainers.mm_trainer import mmTrainer
+from meisenmeister.training.trainers.networks.nnunet_encoder import (
+    mmTrainer_NNUNetEncoder,
+)
 
 
 class TrainingRegistryTests(unittest.TestCase):
@@ -20,6 +23,7 @@ class TrainingRegistryTests(unittest.TestCase):
 
         self.assertIn("mmTrainer", registry)
         self.assertIn("mmTrainer_Debug", registry)
+        self.assertIn("mmTrainer_NNUNetEncoder", registry)
 
     def test_registry_ignores_non_trainer_classes(self) -> None:
         registry = get_trainer_registry()
@@ -29,7 +33,7 @@ class TrainingRegistryTests(unittest.TestCase):
     def test_unknown_trainer_error_lists_available_names(self) -> None:
         with self.assertRaisesRegex(
             ValueError,
-            "Unknown trainer 'missing'.*mmTrainer.*mmTrainer_Debug",
+            "Unknown trainer 'missing'.*mmTrainer.*mmTrainer_Debug.*mmTrainer_NNUNetEncoder",
         ):
             get_trainer_class("missing")
 
@@ -55,6 +59,21 @@ class TrainingRegistryTests(unittest.TestCase):
 
     def test_architecture_exports_include_resnet3d18(self) -> None:
         self.assertIn("ResNet3D18", get_available_architecture_names())
+        self.assertIn("ResidualEncoderClsNetwork", get_available_architecture_names())
+
+    def test_network_specific_trainer_satisfies_base_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with patch(
+                "meisenmeister.training.trainers.mm_trainer.get_fold_sample_ids",
+                return_value={
+                    "train": ["case_001_left", "case_001_right"],
+                    "val": ["case_002_left", "case_002_right"],
+                },
+            ):
+                trainer = mmTrainer_NNUNetEncoder("001", 0, root, root, root)
+
+        self.assertIsInstance(trainer, BaseTrainer)
 
 
 if __name__ == "__main__":

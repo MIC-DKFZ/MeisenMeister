@@ -14,6 +14,9 @@ from torch.utils.data import DataLoader, Dataset
 
 from meisenmeister.architectures import BaseArchitecture
 from meisenmeister.training.trainers.mm_trainer import mmTrainer
+from meisenmeister.training.trainers.networks.nnunet_encoder import (
+    mmTrainer_NNUNetEncoder,
+)
 from meisenmeister.utils.training import (
     build_final_validation_evaluation,
     compute_stratified_bootstrap_interval,
@@ -102,6 +105,42 @@ class MMTrainerTests(unittest.TestCase):
         trainer._scheduler = None
         return trainer
 
+    def _make_nnunet_trainer(
+        self, *, target_shape: list[int]
+    ) -> mmTrainer_NNUNetEncoder:
+        dataset_dir = self.root / "Dataset_001_Test"
+        preprocessed_dataset_dir = self.root / "Dataset_001_Test"
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        (dataset_dir / "dataset.json").write_text("{}", encoding="utf-8")
+        (preprocessed_dataset_dir / "mmPlans.json").write_text(
+            json.dumps(
+                {
+                    "target_shape": target_shape,
+                    "target_spacing": [1.0, 1.0, 1.0],
+                    "margin_mm": [0.0, 0.0, 0.0],
+                }
+            ),
+            encoding="utf-8",
+        )
+        with patch(
+            "meisenmeister.training.trainers.mm_trainer.get_fold_sample_ids",
+            return_value={
+                "train": ["case_000_left", "case_001_left"],
+                "val": ["case_002_left", "case_003_left"],
+            },
+        ):
+            trainer = mmTrainer_NNUNetEncoder(
+                dataset_id="001",
+                fold=0,
+                dataset_dir=dataset_dir,
+                preprocessed_dataset_dir=preprocessed_dataset_dir,
+                results_dir=self.root / "results",
+            )
+        trainer.device = torch.device("cpu")
+        trainer._train_dataset = _TinyROIDataset([0, 1])
+        trainer._val_dataset = _TinyROIDataset([1, 0])
+        return trainer
+
     def test_fit_copies_portable_inference_metadata_to_experiment_dir(self) -> None:
         trainer = self._make_trainer(num_epochs=0)
 
@@ -116,6 +155,15 @@ class MMTrainerTests(unittest.TestCase):
         self.assertTrue((trainer.experiment_dir / "dataset.json").is_file())
         self.assertTrue((trainer.experiment_dir / "mmPlans.json").is_file())
         mock_final_eval.assert_called_once()
+
+    def test_nnunet_trainer_rejects_incompatible_target_shape_early(self) -> None:
+        trainer = self._make_nnunet_trainer(target_shape=[129, 165, 184])
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"ResidualEncoderClsNetwork requires target_shape divisible by \[16, 32, 32\], got \[129, 165, 184\]",
+        ):
+            trainer.fit()
 
     def _make_validation_metrics(
         self,

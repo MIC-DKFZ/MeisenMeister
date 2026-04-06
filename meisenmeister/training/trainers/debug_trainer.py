@@ -4,6 +4,8 @@ from meisenmeister.training.trainers.mm_trainer import mmTrainer
 
 
 class mmTrainer_Debug(mmTrainer):
+    ARCHITECTURE_NAME = "ResNet3D18"
+
     def __init__(
         self,
         dataset_id,
@@ -11,7 +13,7 @@ class mmTrainer_Debug(mmTrainer):
         dataset_dir,
         preprocessed_dataset_dir,
         results_dir,
-        architecture_name: str = "ResNet3D18",
+        architecture_name: str | None = None,
         continue_training: bool = False,
         weights_path=None,
         experiment_postfix: str | None = None,
@@ -22,7 +24,7 @@ class mmTrainer_Debug(mmTrainer):
             dataset_dir=dataset_dir,
             preprocessed_dataset_dir=preprocessed_dataset_dir,
             results_dir=results_dir,
-            architecture_name=architecture_name,
+            architecture_name=architecture_name or self.ARCHITECTURE_NAME,
             num_epochs=2,
             batch_size=1,
             num_workers=0,

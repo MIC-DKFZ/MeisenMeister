@@ -29,6 +29,13 @@ from meisenmeister.utils import (
 )
 
 
+def _resolve_trainer_architecture_name(trainer_name: str) -> str:
+    from meisenmeister.training.registry import get_trainer_class
+
+    trainer_class = get_trainer_class(trainer_name)
+    return getattr(trainer_class, "ARCHITECTURE_NAME", "ResNet3D18")
+
+
 def _validate_folds(folds: list[int]) -> list[int]:
     if not folds:
         raise ValueError("At least one fold must be provided")
@@ -372,7 +379,6 @@ def predict(
     output_dir: str,
     folds: list[int],
     trainer_name: str = "mmTrainer",
-    architecture_name: str = "ResNet3D18",
     experiment_postfix: str | None = None,
     checkpoint: str = "best",
     use_tta: bool = True,
@@ -393,6 +399,7 @@ def predict(
     dataset_dir = find_dataset_dir(paths["mm_raw"], dataset_id)
     preprocessed_dataset_dir = paths["mm_preprocessed"] / dataset_dir.name
     results_dir = paths["mm_results"]
+    architecture_name = _resolve_trainer_architecture_name(trainer_name)
     dataset_json = load_dataset_json(dataset_dir)
     plans = load_mm_plans(preprocessed_dataset_dir / "mmPlans.json")
     fold_predictors = _load_fold_predictors(
