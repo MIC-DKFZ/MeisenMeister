@@ -170,6 +170,38 @@ class CliTests(unittest.TestCase):
             use_tta=False,
         )
 
+    def test_mm_predict_from_modelfolder_passes_options(self) -> None:
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "mm_predict_from_modelfolder",
+                    "/tmp/model",
+                    "-i",
+                    "/tmp/in",
+                    "-o",
+                    "/tmp/out",
+                    "-f",
+                    "0",
+                    "2",
+                    "--checkpoint",
+                    "last",
+                    "--no-tta",
+                ],
+            ),
+            patch("meisenmeister.cli.predict_from_modelfolder") as mock_predict,
+        ):
+            cli.mm_predict_from_modelfolder()
+
+        mock_predict.assert_called_once_with(
+            "/tmp/model",
+            input_dir="/tmp/in",
+            output_dir="/tmp/out",
+            folds=[0, 2],
+            checkpoint="last",
+            use_tta=False,
+        )
+
     def test_mm_create_5fold_writes_to_preprocessed_dataset(self) -> None:
         with (
             patch("sys.argv", ["mm_create_5fold", "-d", "1"]),

@@ -8,6 +8,7 @@ import numpy as np
 import SimpleITK as sitk
 import torch
 
+from meisenmeister.architectures import get_architecture_class
 from meisenmeister.plan_and_preprocess.create_breast_seg import (
     get_breast_segmentation_predictor,
     predict_breast_segmentation,
@@ -18,7 +19,6 @@ from meisenmeister.plan_and_preprocess.preprocessing_utils import (
     load_mm_plans,
     preprocess_roi_array,
 )
-from meisenmeister.training.registry import get_trainer_class
 from meisenmeister.utils import (
     build_experiment_paths,
     discover_case_files,
@@ -138,6 +138,73 @@ def _prepare_case_prediction_inputs(
     return roi_tensors, artifact_paths
 
 
+def _resolve_checkpoint_path(*, fold_dir: Path, checkpoint: str) -> Path:
+    return fold_dir / ("model_best.pt" if checkpoint == "best" else "model_last.pt")
+
+
+def _load_checkpoint_payload(checkpoint_path: Path) -> dict:
+    return torch.load(
+        checkpoint_path,
+        map_location="cpu",
+        weights_only=False,
+    )
+
+
+def _load_model_from_checkpoint_payload(
+    *,
+    checkpoint_payload: dict,
+    architecture_name: str,
+    device: torch.device,
+) -> torch.nn.Module:
+    trainer_config = checkpoint_payload.get("trainer_config", {})
+    in_channels = trainer_config.get("in_channels")
+    num_classes = trainer_config.get("num_classes")
+    if in_channels is None or num_classes is None:
+        raise ValueError(
+            "Checkpoint is missing architecture metadata required for portable inference"
+        )
+    architecture_class = get_architecture_class(architecture_name)
+    model = architecture_class(
+        in_channels=int(in_channels),
+        num_classes=int(num_classes),
+    ).to(device)
+    model.load_state_dict(checkpoint_payload["model_state_dict"])
+    model.eval()
+    return model
+
+
+def _load_fold_predictors_from_experiment_dir(
+    *,
+    experiment_dir: Path,
+    architecture_name: str,
+    folds: list[int],
+    checkpoint: str,
+) -> list[dict]:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    predictors = []
+    for fold in folds:
+        fold_dir = experiment_dir / f"fold_{fold}"
+        checkpoint_path = _resolve_checkpoint_path(
+            fold_dir=fold_dir,
+            checkpoint=checkpoint,
+        )
+        checkpoint_payload = _load_checkpoint_payload(checkpoint_path)
+        model = _load_model_from_checkpoint_payload(
+            checkpoint_payload=checkpoint_payload,
+            architecture_name=architecture_name,
+            device=device,
+        )
+        predictors.append(
+            {
+                "fold": fold,
+                "device": device,
+                "checkpoint_path": str(checkpoint_path),
+                "model": model,
+            }
+        )
+    return predictors
+
+
 def _load_fold_predictors(
     *,
     dataset_id: str,
@@ -150,110 +217,84 @@ def _load_fold_predictors(
     folds: list[int],
     checkpoint: str,
 ) -> list[dict]:
-    trainer_class = get_trainer_class(trainer_name)
-    predictors = []
-    for fold in folds:
-        trainer = trainer_class(
-            dataset_id=dataset_id,
-            fold=fold,
-            dataset_dir=dataset_dir,
-            preprocessed_dataset_dir=preprocessed_dataset_dir,
-            results_dir=results_dir,
-            architecture_name=architecture_name,
-            experiment_postfix=experiment_postfix,
-        )
-        experiment_paths = build_experiment_paths(
-            results_dir=results_dir,
-            dataset_name=dataset_dir.name,
-            trainer_name=trainer_class.__name__,
-            architecture_name=architecture_name,
-            experiment_postfix=experiment_postfix,
-            fold=fold,
-        )
-        checkpoint_path = (
-            experiment_paths["best_checkpoint_path"]
-            if checkpoint == "best"
-            else experiment_paths["last_checkpoint_path"]
-        )
-        checkpoint_payload = torch.load(
-            checkpoint_path,
-            map_location="cpu",
-            weights_only=False,
-        )
-        model = trainer.get_architecture()
-        model.load_state_dict(checkpoint_payload["model_state_dict"])
-        model.eval()
-        predictors.append(
-            {
-                "fold": fold,
-                "device": trainer.device,
-                "checkpoint_path": str(checkpoint_path),
-                "model": model,
-            }
-        )
-    return predictors
-
-
-@require_global_paths_set
-def predict(
-    d: int,
-    input_dir: str,
-    output_dir: str,
-    folds: list[int],
-    trainer_name: str = "mmTrainer",
-    architecture_name: str = "ResNet3D18",
-    experiment_postfix: str | None = None,
-    checkpoint: str = "best",
-    use_tta: bool = True,
-) -> Path:
-    if not 0 <= d <= 999:
-        raise ValueError(f"Dataset id must be between 0 and 999, got {d}")
-    if checkpoint not in {"best", "last"}:
-        raise ValueError(
-            f"checkpoint must be one of ('best', 'last'), got {checkpoint!r}"
-        )
-
-    fold_values = _validate_folds(folds)
-    input_path = Path(input_dir)
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    dataset_id = f"{d:03d}"
-    paths = verify_required_global_paths_set()
-    dataset_dir = find_dataset_dir(paths["mm_raw"], dataset_id)
-    preprocessed_dataset_dir = paths["mm_preprocessed"] / dataset_dir.name
-    results_dir = paths["mm_results"]
-    dataset_json = load_dataset_json(dataset_dir)
-    plans = load_mm_plans(preprocessed_dataset_dir / "mmPlans.json")
-    case_files_by_case_id = discover_case_files(input_path, dataset_json)
-    predictor = get_breast_segmentation_predictor()
-    fold_predictors = _load_fold_predictors(
-        dataset_id=dataset_id,
-        dataset_dir=dataset_dir,
-        preprocessed_dataset_dir=preprocessed_dataset_dir,
+    experiment_dir = build_experiment_paths(
         results_dir=results_dir,
+        dataset_name=dataset_dir.name,
         trainer_name=trainer_name,
         architecture_name=architecture_name,
         experiment_postfix=experiment_postfix,
-        folds=fold_values,
+        fold=folds[0],
+    )["experiment_dir"]
+    return _load_fold_predictors_from_experiment_dir(
+        experiment_dir=experiment_dir,
+        architecture_name=architecture_name,
+        folds=folds,
         checkpoint=checkpoint,
     )
 
-    payload = {
+
+def _build_prediction_payload(
+    *,
+    dataset_id: str | None,
+    dataset_name: str,
+    input_path: Path,
+    output_path: Path,
+    trainer_name: str,
+    architecture_name: str,
+    experiment_postfix: str | None,
+    folds: list[int],
+    checkpoint: str,
+    use_tta: bool,
+) -> dict:
+    return {
         "config": {
             "dataset_id": dataset_id,
-            "dataset_name": dataset_dir.name,
+            "dataset_name": dataset_name,
             "input_dir": str(input_path),
             "output_dir": str(output_path),
             "trainer_name": trainer_name,
             "architecture_name": architecture_name,
             "experiment_postfix": experiment_postfix,
-            "folds": fold_values,
+            "folds": folds,
             "checkpoint": checkpoint,
             "tta_enabled": bool(use_tta),
         },
         "cases": {},
     }
+
+
+def _run_prediction(
+    *,
+    dataset_id: str | None,
+    dataset_name: str,
+    input_path: Path,
+    output_path: Path,
+    dataset_json: dict,
+    plans: dict,
+    fold_predictors: list[dict],
+    trainer_name: str,
+    architecture_name: str,
+    experiment_postfix: str | None,
+    folds: list[int],
+    checkpoint: str,
+    use_tta: bool,
+) -> Path:
+    output_path.mkdir(parents=True, exist_ok=True)
+    case_files_by_case_id = discover_case_files(input_path, dataset_json)
+    predictor = get_breast_segmentation_predictor()
+    payload = _build_prediction_payload(
+        dataset_id=dataset_id,
+        dataset_name=dataset_name,
+        input_path=input_path,
+        output_path=output_path,
+        trainer_name=trainer_name,
+        architecture_name=architecture_name,
+        experiment_postfix=experiment_postfix,
+        folds=folds,
+        checkpoint=checkpoint,
+        use_tta=use_tta,
+    )
+
     for case_id, case_files in sorted(case_files_by_case_id.items()):
         roi_tensors, artifact_paths = _prepare_case_prediction_inputs(
             case_id=case_id,
@@ -297,3 +338,129 @@ def predict(
     predictions_path = output_path / "predictions.json"
     predictions_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return predictions_path
+
+
+def _get_experiment_metadata(
+    experiment_dir: Path, folds: list[int], checkpoint: str
+) -> dict:
+    checkpoint_path = _resolve_checkpoint_path(
+        fold_dir=experiment_dir / f"fold_{folds[0]}",
+        checkpoint=checkpoint,
+    )
+    checkpoint_payload = _load_checkpoint_payload(checkpoint_path)
+    trainer_config = checkpoint_payload.get("trainer_config", {})
+    dataset_name = trainer_config.get("dataset_name", experiment_dir.parent.name)
+    trainer_name = trainer_config.get("trainer_name")
+    architecture_name = trainer_config.get("architecture_name")
+    if trainer_name is None or architecture_name is None:
+        raise ValueError(
+            "Checkpoint is missing trainer_name or architecture_name required for portable inference"
+        )
+    return {
+        "dataset_id": trainer_config.get("dataset_id"),
+        "dataset_name": dataset_name,
+        "trainer_name": trainer_name,
+        "architecture_name": architecture_name,
+        "experiment_postfix": trainer_config.get("experiment_postfix"),
+    }
+
+
+@require_global_paths_set
+def predict(
+    d: int,
+    input_dir: str,
+    output_dir: str,
+    folds: list[int],
+    trainer_name: str = "mmTrainer",
+    architecture_name: str = "ResNet3D18",
+    experiment_postfix: str | None = None,
+    checkpoint: str = "best",
+    use_tta: bool = True,
+) -> Path:
+    if not 0 <= d <= 999:
+        raise ValueError(f"Dataset id must be between 0 and 999, got {d}")
+    if checkpoint not in {"best", "last"}:
+        raise ValueError(
+            f"checkpoint must be one of ('best', 'last'), got {checkpoint!r}"
+        )
+
+    fold_values = _validate_folds(folds)
+    input_path = Path(input_dir)
+    output_path = Path(output_dir)
+
+    dataset_id = f"{d:03d}"
+    paths = verify_required_global_paths_set()
+    dataset_dir = find_dataset_dir(paths["mm_raw"], dataset_id)
+    preprocessed_dataset_dir = paths["mm_preprocessed"] / dataset_dir.name
+    results_dir = paths["mm_results"]
+    dataset_json = load_dataset_json(dataset_dir)
+    plans = load_mm_plans(preprocessed_dataset_dir / "mmPlans.json")
+    fold_predictors = _load_fold_predictors(
+        dataset_id=dataset_id,
+        dataset_dir=dataset_dir,
+        preprocessed_dataset_dir=preprocessed_dataset_dir,
+        results_dir=results_dir,
+        trainer_name=trainer_name,
+        architecture_name=architecture_name,
+        experiment_postfix=experiment_postfix,
+        folds=fold_values,
+        checkpoint=checkpoint,
+    )
+    return _run_prediction(
+        dataset_id=dataset_id,
+        dataset_name=dataset_dir.name,
+        input_path=input_path,
+        output_path=output_path,
+        dataset_json=dataset_json,
+        plans=plans,
+        fold_predictors=fold_predictors,
+        trainer_name=trainer_name,
+        architecture_name=architecture_name,
+        experiment_postfix=experiment_postfix,
+        folds=fold_values,
+        checkpoint=checkpoint,
+        use_tta=use_tta,
+    )
+
+
+def predict_from_modelfolder(
+    model_folder: str,
+    input_dir: str,
+    output_dir: str,
+    folds: list[int],
+    checkpoint: str = "best",
+    use_tta: bool = True,
+) -> Path:
+    if checkpoint not in {"best", "last"}:
+        raise ValueError(
+            f"checkpoint must be one of ('best', 'last'), got {checkpoint!r}"
+        )
+
+    fold_values = _validate_folds(folds)
+    experiment_dir = Path(model_folder)
+    input_path = Path(input_dir)
+    output_path = Path(output_dir)
+    dataset_json = load_dataset_json(experiment_dir)
+    plans = load_mm_plans(experiment_dir / "mmPlans.json")
+    metadata = _get_experiment_metadata(experiment_dir, fold_values, checkpoint)
+    fold_predictors = _load_fold_predictors_from_experiment_dir(
+        experiment_dir=experiment_dir,
+        architecture_name=metadata["architecture_name"],
+        folds=fold_values,
+        checkpoint=checkpoint,
+    )
+    return _run_prediction(
+        dataset_id=metadata["dataset_id"],
+        dataset_name=metadata["dataset_name"],
+        input_path=input_path,
+        output_path=output_path,
+        dataset_json=dataset_json,
+        plans=plans,
+        fold_predictors=fold_predictors,
+        trainer_name=metadata["trainer_name"],
+        architecture_name=metadata["architecture_name"],
+        experiment_postfix=metadata["experiment_postfix"],
+        folds=fold_values,
+        checkpoint=checkpoint,
+        use_tta=use_tta,
+    )

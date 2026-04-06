@@ -65,6 +65,11 @@ class MMTrainerTests(unittest.TestCase):
         weights_path: Path | None = None,
         experiment_postfix: str | None = None,
     ) -> mmTrainer:
+        dataset_dir = self.root / "Dataset_001_Test"
+        preprocessed_dataset_dir = self.root / "Dataset_001_Test"
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        (dataset_dir / "dataset.json").write_text("{}", encoding="utf-8")
+        (preprocessed_dataset_dir / "mmPlans.json").write_text("{}", encoding="utf-8")
         with patch(
             "meisenmeister.training.trainers.mm_trainer.get_fold_sample_ids",
             return_value={
@@ -75,8 +80,8 @@ class MMTrainerTests(unittest.TestCase):
             trainer = mmTrainer(
                 dataset_id="001",
                 fold=0,
-                dataset_dir=self.root / "Dataset_001_Test",
-                preprocessed_dataset_dir=self.root / "Dataset_001_Test",
+                dataset_dir=dataset_dir,
+                preprocessed_dataset_dir=preprocessed_dataset_dir,
                 results_dir=self.root / "results",
                 architecture_name="ResNet3D18",
                 num_epochs=num_epochs,
@@ -96,6 +101,21 @@ class MMTrainerTests(unittest.TestCase):
         trainer._optimizer = None
         trainer._scheduler = None
         return trainer
+
+    def test_fit_copies_portable_inference_metadata_to_experiment_dir(self) -> None:
+        trainer = self._make_trainer(num_epochs=0)
+
+        with (
+            patch("sys.stdout", new_callable=io.StringIO),
+            patch(
+                "meisenmeister.training.trainers.mm_trainer.run_final_validation_evaluation"
+            ) as mock_final_eval,
+        ):
+            trainer.fit()
+
+        self.assertTrue((trainer.experiment_dir / "dataset.json").is_file())
+        self.assertTrue((trainer.experiment_dir / "mmPlans.json").is_file())
+        mock_final_eval.assert_called_once()
 
     def _make_validation_metrics(
         self,

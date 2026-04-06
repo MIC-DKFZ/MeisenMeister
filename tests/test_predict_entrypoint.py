@@ -211,6 +211,154 @@ class PredictEntrypointTests(unittest.TestCase):
             self.assertEqual(left_case_001["prediction"], 1)
             self.assertEqual(sorted(left_case_001["per_fold"]), ["0", "1"])
 
+    def test_predict_from_modelfolder_writes_outputs_without_global_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            experiment_dir = (
+                root / "results" / "Dataset_001_Test" / "mmTrainer_ResNet3D18"
+            )
+            output_dir = root / "predictions"
+            input_dir = root / "input"
+            input_dir.mkdir()
+            experiment_dir.mkdir(parents=True)
+            (experiment_dir / "dataset.json").write_text(
+                json.dumps(
+                    {
+                        "channel_names": {"0": "image"},
+                        "file_ending": ".nii.gz",
+                        "problem_type": "classification",
+                        "labels": {"0": "neg", "1": "pos"},
+                        "numTraining": 2,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (experiment_dir / "mmPlans.json").write_text(
+                json.dumps(
+                    {
+                        "roi_labels": {"left": 1, "right": 2},
+                        "target_spacing": [1.0, 1.0, 1.0],
+                        "target_shape": [2, 2, 2],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            case_files = {
+                "case_001": [input_dir / "case_001_0000.nii.gz"],
+            }
+
+            def _fake_prepare_case_prediction_inputs(**kwargs):
+                case_id = kwargs["case_id"]
+                case_output_dir = kwargs["output_dir"]
+                breast_mask = case_output_dir / f"{case_id}_breast_mask.nii.gz"
+                left_mask = case_output_dir / f"{case_id}_left_mask.nii.gz"
+                right_mask = case_output_dir / f"{case_id}_right_mask.nii.gz"
+                for path in (breast_mask, left_mask, right_mask):
+                    path.write_text("mask", encoding="utf-8")
+                return {
+                    "left": torch.ones((1, 2, 2, 2), dtype=torch.float32),
+                    "right": torch.full((1, 2, 2, 2), 2.0, dtype=torch.float32),
+                }, {
+                    "breast_mask": str(breast_mask),
+                    "left_mask": str(left_mask),
+                    "right_mask": str(right_mask),
+                }
+
+            with (
+                patch(
+                    "meisenmeister.training.predict.discover_case_files",
+                    return_value=case_files,
+                ),
+                patch(
+                    "meisenmeister.training.predict.get_breast_segmentation_predictor",
+                    return_value=object(),
+                ),
+                patch(
+                    "meisenmeister.training.predict._get_experiment_metadata",
+                    return_value={
+                        "dataset_id": "001",
+                        "dataset_name": "Dataset_001_Test",
+                        "trainer_name": "mmTrainer",
+                        "architecture_name": "ResNet3D18",
+                        "experiment_postfix": None,
+                    },
+                ),
+                patch(
+                    "meisenmeister.training.predict._load_fold_predictors_from_experiment_dir",
+                    return_value=[
+                        {
+                            "fold": 0,
+                            "device": torch.device("cpu"),
+                            "checkpoint_path": str(
+                                experiment_dir / "fold_0" / "model_best.pt"
+                            ),
+                            "model": object(),
+                        }
+                    ],
+                ),
+                patch(
+                    "meisenmeister.training.predict._prepare_case_prediction_inputs",
+                    side_effect=_fake_prepare_case_prediction_inputs,
+                ),
+                patch(
+                    "meisenmeister.training.predict._predict_roi_with_tta",
+                    side_effect=[
+                        np.array([0.2, 0.8], dtype=np.float32),
+                        np.array([0.7, 0.3], dtype=np.float32),
+                    ],
+                ),
+            ):
+                predictions_path = predict_module.predict_from_modelfolder(
+                    str(experiment_dir),
+                    input_dir=str(input_dir),
+                    output_dir=str(output_dir),
+                    folds=[0],
+                    checkpoint="best",
+                    use_tta=True,
+                )
+
+            payload = json.loads(predictions_path.read_text(encoding="utf-8"))
+            self.assertEqual(predictions_path, output_dir / "predictions.json")
+            self.assertEqual(payload["config"]["dataset_id"], "001")
+            self.assertEqual(payload["config"]["trainer_name"], "mmTrainer")
+            self.assertEqual(sorted(payload["cases"]), ["case_001"])
+
+    def test_get_experiment_metadata_reads_checkpoint_config(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            experiment_dir = (
+                Path(temp_dir) / "Dataset_001_Test" / "mmTrainer_ResNet3D18"
+            )
+            fold_dir = experiment_dir / "fold_0"
+            fold_dir.mkdir(parents=True)
+            torch.save(
+                {
+                    "trainer_config": {
+                        "dataset_id": "001",
+                        "dataset_name": "Dataset_001_Test",
+                        "trainer_name": "mmTrainer",
+                        "architecture_name": "ResNet3D18",
+                        "experiment_postfix": "portable",
+                        "in_channels": 1,
+                        "num_classes": 2,
+                    },
+                    "model_state_dict": {},
+                },
+                fold_dir / "model_best.pt",
+            )
+
+            metadata = predict_module._get_experiment_metadata(
+                experiment_dir,
+                [0],
+                "best",
+            )
+
+        self.assertEqual(metadata["dataset_id"], "001")
+        self.assertEqual(metadata["dataset_name"], "Dataset_001_Test")
+        self.assertEqual(metadata["trainer_name"], "mmTrainer")
+        self.assertEqual(metadata["architecture_name"], "ResNet3D18")
+        self.assertEqual(metadata["experiment_postfix"], "portable")
+
     def test_predict_uses_single_identity_variant_when_tta_disabled(self) -> None:
         with patch("meisenmeister.training.predict._get_flip_axes", return_value=[()]):
             model = _ConstantModel([2.0, 1.0])

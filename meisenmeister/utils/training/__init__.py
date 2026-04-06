@@ -1,5 +1,6 @@
 from .artifacts import (
     build_experiment_paths,
+    ensure_portable_inference_metadata,
     format_metric,
     log_message,
     prepare_output_dir,
@@ -39,6 +40,7 @@ __all__ = [
     "compute_stratified_bootstrap_interval",
     "compute_ema",
     "create_empty_history",
+    "ensure_portable_inference_metadata",
     "format_metric",
     "load_resume_checkpoint",
     "log_message",

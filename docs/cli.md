@@ -12,6 +12,8 @@ This page is the practical reference for the installed console commands.
 - `mm_plan_and_preprocess`
 - `mm_create_5fold`
 - `mm_train`
+- `mm_predict`
+- `mm_predict_from_modelfolder`
 
 ## Common Usage Pattern
 
@@ -23,6 +25,7 @@ mm_extract_dataset_fingerprint -d 1
 mm_plan_and_preprocess -d 1 --num-workers 4
 mm_create_5fold -d 1
 mm_train -d 1 -f 0
+mm_predict -d 1 -i /path/to/images -o /path/to/preds -f 0
 ```
 
 ## Command Reference
@@ -156,6 +159,38 @@ Important rule:
 - `-c` and `-w` cannot be used together
 
 That is a deliberate validation rule. Resume means “load experiment state from checkpoint.” Weights means “start a new run from an external initialization.” The code refuses to guess which one you meant.
+
+### `mm_predict`
+
+Runs ROI-level inference using a locally configured dataset id plus the matching results folder under `MM_RESULTS`.
+
+Example:
+
+```bash
+mm_predict -d 1 -i /path/to/images -o /path/to/preds -f 0 1 2 3 4
+```
+
+### `mm_predict_from_modelfolder`
+
+Runs the same inference flow from a portable experiment folder, without requiring `-d` or local `MM_RAW` / `MM_PREPROCESSED` setup.
+
+The folder must be an experiment root of the form:
+
+`<results>/<dataset_name>/<Trainer>_<Architecture>[_<postfix>]`
+
+and must contain:
+
+- `dataset.json`
+- `mmPlans.json`
+- `fold_<n>/model_best.pt` and/or `fold_<n>/model_last.pt`
+
+Example:
+
+```bash
+mm_predict_from_modelfolder /shared/Dataset_001_Test/mmTrainer_ResNet3D18 -i /path/to/images -o /path/to/preds -f 0 1 2 3 4
+```
+
+Training copies `dataset.json` and `mmPlans.json` into the experiment folder automatically so the folder can be shared for inference on another machine.
 
 ## A Few Practical Notes
 

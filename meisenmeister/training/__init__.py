@@ -7,7 +7,7 @@ from meisenmeister.architectures import (
 )
 
 from .base_trainer import BaseTrainer
-from .predict import predict
+from .predict import predict, predict_from_modelfolder
 from .registry import (
     get_available_trainer_names,
     get_trainer_class,
@@ -29,6 +29,7 @@ __all__ = [
     "load_splits",
     "mmTrainer",
     "predict",
+    "predict_from_modelfolder",
     "get_available_trainer_names",
     "get_trainer_class",
     "get_trainer_registry",

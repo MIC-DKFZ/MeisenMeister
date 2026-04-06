@@ -10,7 +10,7 @@ from meisenmeister.plan_and_preprocess.homogenize import homogenize
 from meisenmeister.plan_and_preprocess.plan_and_preprocess import plan_and_preprocess
 from meisenmeister.plan_and_preprocess.plan_experiment import plan_experiment
 from meisenmeister.plan_and_preprocess.preprocess import preprocess
-from meisenmeister.training.predict import predict
+from meisenmeister.training.predict import predict, predict_from_modelfolder
 from meisenmeister.training.splits import create_five_fold_splits
 from meisenmeister.training.train import train
 from meisenmeister.utils import (
@@ -265,6 +265,57 @@ def mm_predict() -> None:
         trainer_name=args.trainer,
         architecture_name=args.architecture,
         experiment_postfix=args.postfix,
+        checkpoint=args.checkpoint,
+        use_tta=not args.no_tta,
+    )
+
+
+def mm_predict_from_modelfolder() -> None:
+    parser = argparse.ArgumentParser(
+        prog="mm_predict_from_modelfolder",
+        description="Run ROI-level inference from a portable experiment folder containing checkpoints, dataset.json, and mmPlans.json.",
+    )
+    parser.add_argument(
+        "model_folder",
+        help="Experiment folder containing dataset.json, mmPlans.json, and fold_<n> checkpoints.",
+    )
+    parser.add_argument(
+        "-i",
+        "--input-dir",
+        required=True,
+        help="Input folder containing one or more cases in imagesTr naming format.",
+    )
+    parser.add_argument(
+        "-o",
+        "--output-dir",
+        required=True,
+        help="Output folder for masks and predictions.json.",
+    )
+    parser.add_argument(
+        "-f",
+        "--folds",
+        type=int,
+        nargs="+",
+        required=True,
+        help="One or more fold indices to use for ensembling.",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        default="best",
+        choices=("best", "last"),
+        help="Checkpoint variant to load for each fold.",
+    )
+    parser.add_argument(
+        "--no-tta",
+        action="store_true",
+        help="Disable default flip test-time augmentation.",
+    )
+    args = parser.parse_args()
+    predict_from_modelfolder(
+        args.model_folder,
+        input_dir=args.input_dir,
+        output_dir=args.output_dir,
+        folds=args.folds,
         checkpoint=args.checkpoint,
         use_tta=not args.no_tta,
     )

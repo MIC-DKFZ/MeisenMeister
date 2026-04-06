@@ -26,6 +26,7 @@ from meisenmeister.utils.training import (
     build_trainer_config,
     compute_ema,
     create_empty_history,
+    ensure_portable_inference_metadata,
     format_metric,
     load_resume_checkpoint,
     log_message,
@@ -111,6 +112,11 @@ class mmTrainer(BaseTrainer):
         self._resume_state = None
 
     def fit(self) -> None:
+        ensure_portable_inference_metadata(
+            dataset_dir=self.dataset_dir,
+            preprocessed_dataset_dir=self.preprocessed_dataset_dir,
+            experiment_dir=self.experiment_dir,
+        )
         overwrite_warning = prepare_output_dir(
             fold_dir=self.fold_dir,
             log_path=self.log_path,

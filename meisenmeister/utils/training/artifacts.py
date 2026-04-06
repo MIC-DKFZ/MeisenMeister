@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+import shutil
 import sys
 from pathlib import Path
 
@@ -37,6 +38,28 @@ def build_experiment_paths(
         "eval_best_path": fold_dir / "eval_best.json",
         "plot_path": fold_dir / "training_curves.png",
     }
+
+
+def ensure_portable_inference_metadata(
+    *,
+    dataset_dir: Path,
+    preprocessed_dataset_dir: Path,
+    experiment_dir: Path,
+) -> None:
+    experiment_dir.mkdir(parents=True, exist_ok=True)
+    source_paths = {
+        "dataset.json": dataset_dir / "dataset.json",
+        "mmPlans.json": preprocessed_dataset_dir / "mmPlans.json",
+    }
+    for filename, source_path in source_paths.items():
+        if not source_path.is_file():
+            raise FileNotFoundError(
+                f"Required inference metadata file not found: {source_path}"
+            )
+        destination_path = experiment_dir / filename
+        if destination_path.exists():
+            continue
+        shutil.copy2(source_path, destination_path)
 
 
 def prepare_output_dir(
