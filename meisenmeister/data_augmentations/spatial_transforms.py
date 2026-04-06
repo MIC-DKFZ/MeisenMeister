@@ -154,9 +154,9 @@ def _resample_channel_with_scale(channel: np.ndarray, scale: float) -> np.ndarra
         & (src_x <= width - 1)
     )
 
-    z0 = np.floor(src_z).astype(np.int64)
-    y0 = np.floor(src_y).astype(np.int64)
-    x0 = np.floor(src_x).astype(np.int64)
+    z0 = np.clip(np.floor(src_z).astype(np.int64), 0, depth - 1)
+    y0 = np.clip(np.floor(src_y).astype(np.int64), 0, height - 1)
+    x0 = np.clip(np.floor(src_x).astype(np.int64), 0, width - 1)
     z1 = np.clip(z0 + 1, 0, depth - 1)
     y1 = np.clip(y0 + 1, 0, height - 1)
     x1 = np.clip(x0 + 1, 0, width - 1)
