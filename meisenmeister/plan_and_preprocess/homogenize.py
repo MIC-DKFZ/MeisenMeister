@@ -1,3 +1,5 @@
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import SimpleITK as sitk
@@ -23,6 +25,16 @@ def _resample_to_reference(
     return resampler.Execute(moving_image)
 
 
+def _homogenize_single_image(
+    moving_path: Path,
+    reference_path: Path,
+) -> None:
+    reference_image = sitk.ReadImage(str(reference_path))
+    moving_image = sitk.ReadImage(str(moving_path))
+    resampled_image = _resample_to_reference(moving_image, reference_image)
+    sitk.WriteImage(resampled_image, str(moving_path))
+
+
 @require_global_paths_set
 def homogenize(d: int) -> Path:
     if not 0 <= d <= 999:
@@ -35,8 +47,9 @@ def homogenize(d: int) -> Path:
     case_files = verify_training_files_present(dataset_dir, dataset_json)
     file_ending = dataset_json["file_ending"]
     reference_suffix = f"_0000{file_ending}"
+    work_items: list[tuple[Path, Path]] = []
 
-    for case_id, files in tqdm(sorted(case_files.items()), desc="Homogenizing cases"):
+    for case_id, files in sorted(case_files.items()):
         reference_path = next(
             (path for path in files if path.name.endswith(reference_suffix)),
             None,
@@ -46,13 +59,24 @@ def homogenize(d: int) -> Path:
                 f"Missing reference image ending with '{reference_suffix}' for case {case_id}"
             )
 
-        reference_image = sitk.ReadImage(str(reference_path))
         for path in files:
             if path == reference_path:
                 continue
-            moving_image = sitk.ReadImage(str(path))
-            resampled_image = _resample_to_reference(moving_image, reference_image)
-            sitk.WriteImage(resampled_image, str(path))
+            work_items.append((path, reference_path))
+
+    if work_items:
+        max_workers = min(32, (os.cpu_count() or 1) + 4, len(work_items))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(_homogenize_single_image, moving_path, reference_path)
+                for moving_path, reference_path in work_items
+            ]
+            for future in tqdm(
+                as_completed(futures),
+                total=len(futures),
+                desc="Homogenizing images",
+            ):
+                future.result()
 
     print(dataset_dir / "imagesTr")
     return dataset_dir / "imagesTr"
