@@ -147,6 +147,7 @@ class mmTrainer_NNUNetEncoder_Finetune(mmTrainer_NNUNetEncoder):
         self.poly_exp = 0.9
         self._optimizer = None
         self._scheduler = None
+        self.batch_size = 1
 
     def get_optimizer(self):
         if self._optimizer is None:
