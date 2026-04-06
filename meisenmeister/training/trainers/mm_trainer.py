@@ -27,13 +27,17 @@ from meisenmeister.utils.training import (
     aggregate_epoch_metrics,
     aggregate_validation_classification_metrics,
     append_history,
+    autocast_context,
     build_dataloader_kwargs,
     build_experiment_paths,
     build_trainer_config,
     compute_ema,
+    configure_training_performance,
     create_empty_history,
+    create_grad_scaler,
     ensure_portable_inference_metadata,
     format_metric,
+    is_amp_enabled,
     load_resume_checkpoint,
     log_message,
     prepare_output_dir,
@@ -86,6 +90,9 @@ class mmTrainer(BaseTrainer):
         self.weights_path = weights_path
         self.experiment_postfix = experiment_postfix
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        configure_training_performance(self.device)
+        self.amp_enabled = is_amp_enabled(self.device)
+        self.grad_scaler = create_grad_scaler(self.device)
         self.split_sample_ids = get_fold_sample_ids(preprocessed_dataset_dir, fold)
         experiment_paths = build_experiment_paths(
             results_dir=self.results_dir,
@@ -193,6 +200,7 @@ class mmTrainer(BaseTrainer):
         log_message(f"Epochs: {self.num_epochs}", self.log_path)
         log_message(f"Initial LR: {self.initial_lr}", self.log_path)
         log_message(f"Weight decay: {self.weight_decay}", self.log_path)
+        log_message(f"AMP enabled: {self.amp_enabled}", self.log_path)
         log_message(f"DataLoader workers: {self.num_workers}", self.log_path)
         log_message(
             f"DataLoader persistent_workers: {self.num_workers > 0}", self.log_path
@@ -320,6 +328,11 @@ class mmTrainer(BaseTrainer):
                     model_state_dict=self.get_architecture().state_dict(),
                     optimizer_state_dict=self.get_optimizer().state_dict(),
                     scheduler_state_dict=self.get_scheduler().state_dict(),
+                    grad_scaler_state_dict=(
+                        None
+                        if self.grad_scaler is None
+                        else self.grad_scaler.state_dict()
+                    ),
                 )
                 log_message(
                     f"Saved new best model at epoch {epoch_idx} with ema_val_bal_acc={ema_val_balanced_accuracy:.4f} and val_loss={val_loss:.4f}",
@@ -357,6 +370,9 @@ class mmTrainer(BaseTrainer):
                 model_state_dict=self.get_architecture().state_dict(),
                 optimizer_state_dict=self.get_optimizer().state_dict(),
                 scheduler_state_dict=self.get_scheduler().state_dict(),
+                grad_scaler_state_dict=(
+                    None if self.grad_scaler is None else self.grad_scaler.state_dict()
+                ),
             )
             save_training_curves(self._history, self.plot_path)
 
@@ -538,12 +554,19 @@ class mmTrainer(BaseTrainer):
         labels = batch["label"].to(self.device, dtype=torch.long, non_blocking=True)
 
         architecture.train()
-        optimizer.zero_grad()
+        optimizer.zero_grad(set_to_none=True)
 
-        logits = architecture(images)
-        loss = loss_fn(logits, labels)
-        loss.backward()
-        optimizer.step()
+        with autocast_context(self.device):
+            logits = architecture(images)
+            loss = loss_fn(logits, labels)
+
+        if self.grad_scaler is not None:
+            self.grad_scaler.scale(loss).backward()
+            self.grad_scaler.step(optimizer)
+            self.grad_scaler.update()
+        else:
+            loss.backward()
+            optimizer.step()
 
         predictions = logits.argmax(dim=1)
         return {
@@ -561,10 +584,11 @@ class mmTrainer(BaseTrainer):
 
         architecture.eval()
         with torch.no_grad():
-            logits = architecture(images)
-            loss = loss_fn(logits, labels)
+            with autocast_context(self.device):
+                logits = architecture(images)
+                loss = loss_fn(logits, labels)
             predictions = logits.argmax(dim=1)
-            probabilities = torch.softmax(logits, dim=1)
+            probabilities = torch.softmax(logits.float(), dim=1)
 
         return {
             "loss": float(loss.detach().item()),

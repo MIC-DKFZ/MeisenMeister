@@ -29,10 +29,17 @@ from .metrics import (
     create_empty_history,
     should_update_best,
 )
+from .performance import (
+    autocast_context,
+    configure_training_performance,
+    create_grad_scaler,
+    is_amp_enabled,
+)
 
 __all__ = [
     "aggregate_epoch_metrics",
     "aggregate_validation_classification_metrics",
+    "autocast_context",
     "append_history",
     "build_experiment_paths",
     "build_dataloader_kwargs",
@@ -40,10 +47,13 @@ __all__ = [
     "build_trainer_config",
     "compute_classification_metrics",
     "compute_stratified_bootstrap_interval",
+    "configure_training_performance",
     "compute_ema",
+    "create_grad_scaler",
     "create_empty_history",
     "ensure_portable_inference_metadata",
     "format_metric",
+    "is_amp_enabled",
     "load_resume_checkpoint",
     "log_message",
     "prepare_output_dir",

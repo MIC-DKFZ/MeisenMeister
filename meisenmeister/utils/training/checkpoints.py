@@ -78,6 +78,9 @@ def restore_checkpoint_payload(trainer, checkpoint: dict) -> None:
     trainer.get_architecture().load_state_dict(checkpoint["model_state_dict"])
     trainer.get_optimizer().load_state_dict(checkpoint["optimizer_state_dict"])
     trainer.get_scheduler().load_state_dict(checkpoint["scheduler_state_dict"])
+    grad_scaler_state_dict = checkpoint.get("grad_scaler_state_dict")
+    if trainer.grad_scaler is not None and grad_scaler_state_dict is not None:
+        trainer.grad_scaler.load_state_dict(grad_scaler_state_dict)
     trainer._history = checkpoint["history"]
     trainer._best_state = checkpoint["best_state"]
     restore_rng_state(checkpoint.get("rng_state"))
@@ -110,6 +113,7 @@ def save_checkpoint(
     model_state_dict: dict,
     optimizer_state_dict: dict,
     scheduler_state_dict: dict,
+    grad_scaler_state_dict: dict | None = None,
 ) -> None:
     checkpoint = {
         "trainer_config": trainer_config,
@@ -119,6 +123,7 @@ def save_checkpoint(
         "model_state_dict": model_state_dict,
         "optimizer_state_dict": optimizer_state_dict,
         "scheduler_state_dict": scheduler_state_dict,
+        "grad_scaler_state_dict": grad_scaler_state_dict,
         "rng_state": capture_rng_state(),
     }
     tmp_path = path.with_suffix(f"{path.suffix}.tmp")
