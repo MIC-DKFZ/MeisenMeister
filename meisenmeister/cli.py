@@ -162,7 +162,7 @@ def mm_train() -> None:
     parser.add_argument(
         "--num-workers",
         type=int,
-        help="Number of DataLoader worker processes. Defaults to an optimized training preset for this machine.",
+        help="Number of DataLoader worker processes. Defaults to a CPU-based heuristic capped at 8 workers.",
     )
     parser.add_argument(
         "-c",
@@ -231,7 +231,7 @@ def mm_benchmark_train() -> None:
     parser.add_argument(
         "--num-workers",
         type=int,
-        help="Number of DataLoader worker processes. Defaults to the trainer preset.",
+        help="Number of DataLoader worker processes. Defaults to a CPU-based heuristic capped at 8 workers.",
     )
     parser.add_argument(
         "--postfix",
