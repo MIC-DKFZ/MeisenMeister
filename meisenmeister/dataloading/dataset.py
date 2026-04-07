@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 import blosc2
@@ -109,7 +110,18 @@ class MeisenmeisterROIDataset(Dataset):
 
     def __getitem__(self, index: int) -> dict:
         sample = self.samples[index]
-        image = np.asarray(blosc2.open(str(sample["path"]), mode="r"), dtype=np.float32)
+        dparams = {"nthreads": 1}
+        # mmap does not work on Windows for this loader path.
+        mmap_kwargs = {} if os.name == "nt" else {"mmap_mode": "r"}
+        image = np.asarray(
+            blosc2.open(
+                urlpath=str(sample["path"]),
+                mode="r",
+                dparams=dparams,
+                **mmap_kwargs,
+            ),
+            dtype=np.float32,
+        )
         output = {
             "image": image,
             "label": torch.tensor(sample["label"], dtype=torch.long),
