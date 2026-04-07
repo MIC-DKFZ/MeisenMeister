@@ -16,6 +16,7 @@ from meisenmeister.architectures import BaseArchitecture
 from meisenmeister.training.trainers.mm_trainer import mmTrainer
 from meisenmeister.training.trainers.networks.nnunet_encoder import (
     mmTrainer_NNUNetEncoder,
+    mmTrainer_NNUNetEncoder_Finetune_ClassBalanced,
 )
 from meisenmeister.utils.training import (
     build_final_validation_evaluation,
@@ -141,6 +142,45 @@ class MMTrainerTests(unittest.TestCase):
         trainer._val_dataset = _TinyROIDataset([1, 0])
         return trainer
 
+    def _make_class_balanced_finetune_trainer(
+        self, *, train_labels: list[int]
+    ) -> mmTrainer_NNUNetEncoder_Finetune_ClassBalanced:
+        dataset_dir = self.root / "Dataset_001_Test"
+        preprocessed_dataset_dir = self.root / "Dataset_001_Test"
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        (dataset_dir / "dataset.json").write_text("{}", encoding="utf-8")
+        (preprocessed_dataset_dir / "mmPlans.json").write_text(
+            json.dumps(
+                {
+                    "target_shape": [128, 160, 192],
+                    "target_spacing": [1.0, 1.0, 1.0],
+                    "margin_mm": [0.0, 0.0, 0.0],
+                }
+            ),
+            encoding="utf-8",
+        )
+        with patch(
+            "meisenmeister.training.trainers.mm_trainer.get_fold_sample_ids",
+            return_value={
+                "train": [
+                    f"case_{index:03d}_left" for index in range(len(train_labels))
+                ],
+                "val": ["case_100_left", "case_101_left"],
+            },
+        ):
+            trainer = mmTrainer_NNUNetEncoder_Finetune_ClassBalanced(
+                dataset_id="001",
+                fold=0,
+                dataset_dir=dataset_dir,
+                preprocessed_dataset_dir=preprocessed_dataset_dir,
+                results_dir=self.root / "results",
+                num_workers=0,
+            )
+        trainer.device = torch.device("cpu")
+        trainer._train_dataset = _TinyROIDataset(train_labels)
+        trainer._val_dataset = _TinyROIDataset([1, 0])
+        return trainer
+
     def test_fit_copies_portable_inference_metadata_to_experiment_dir(self) -> None:
         trainer = self._make_trainer(num_epochs=0)
 
@@ -164,6 +204,17 @@ class MMTrainerTests(unittest.TestCase):
             r"ResidualEncoderClsNetwork requires target_shape divisible by \[16, 32, 32\], got \[129, 165, 184\]",
         ):
             trainer.fit()
+
+    def test_class_balanced_finetune_trainer_weights_minority_class_higher(
+        self,
+    ) -> None:
+        trainer = self._make_class_balanced_finetune_trainer(train_labels=[0, 0, 0, 1])
+
+        loss = trainer.get_loss()
+
+        self.assertIsInstance(loss, nn.CrossEntropyLoss)
+        self.assertIsNotNone(loss.weight)
+        self.assertGreater(float(loss.weight[1]), float(loss.weight[0]))
 
     def _make_validation_metrics(
         self,

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import torch
+from torch import nn
 
 from meisenmeister.architectures import get_architecture_class
 from meisenmeister.training.trainers.mm_trainer import mmTrainer
@@ -186,3 +187,27 @@ class mmTrainer_NNUNetEncoder_Finetune(mmTrainer_NNUNetEncoder):
                 poly_exp=self.poly_exp,
             )
         return self._scheduler
+
+
+class mmTrainer_NNUNetEncoder_Finetune_ClassBalanced(mmTrainer_NNUNetEncoder_Finetune):
+    MIN_CLASS_WEIGHT = 1e-3
+
+    def get_loss(self):
+        if self._loss is None:
+            labels = [
+                int(sample["label"]) for sample in self.get_train_dataset().samples
+            ]
+            if not labels:
+                raise ValueError("Cannot compute class-balanced loss without labels")
+
+            num_classes = max(2, max(labels) + 1)
+            class_counts = torch.bincount(
+                torch.tensor(labels, dtype=torch.long),
+                minlength=num_classes,
+            )
+            safe_class_counts = class_counts.clamp_min(1)
+            class_weights = class_counts.sum().to(torch.float32) / safe_class_counts
+            class_weights = class_weights / class_weights.mean()
+            class_weights = class_weights.clamp_min(self.MIN_CLASS_WEIGHT)
+            self._loss = nn.CrossEntropyLoss(weight=class_weights.to(self.device))
+        return self._loss
