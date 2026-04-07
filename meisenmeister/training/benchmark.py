@@ -330,9 +330,9 @@ def benchmark_train(
         raise ValueError("val warmup must be >= 0 and val steps must be >= 1")
 
     dataset_id = f"{d:03d}"
-    paths = verify_required_global_paths_set()
-    dataset_dir = find_dataset_dir(paths["mm_raw"], dataset_id)
-    preprocessed_dataset_dir = paths["mm_preprocessed"] / dataset_dir.name
+    paths = verify_required_global_paths_set(("mm_preprocessed", "mm_results"))
+    preprocessed_dataset_dir = find_dataset_dir(paths["mm_preprocessed"], dataset_id)
+    dataset_dir = preprocessed_dataset_dir
     get_fold_sample_ids(preprocessed_dataset_dir, fold)
 
     trainer_class = get_trainer_class(trainer_name)
