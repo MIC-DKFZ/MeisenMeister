@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import torch
+
 train_module = importlib.import_module("meisenmeister.training.train")
 
 
@@ -21,9 +23,11 @@ class _MockTrainer:
         preprocessed_dataset_dir: Path,
         results_dir: Path,
         architecture_name: str,
+        num_workers: int | None = None,
         continue_training: bool = False,
         weights_path: Path | None = None,
         experiment_postfix: str | None = None,
+        compile_enabled: bool = True,
     ):
         self.dataset_id = dataset_id
         self.fold = fold
@@ -31,9 +35,12 @@ class _MockTrainer:
         self.preprocessed_dataset_dir = preprocessed_dataset_dir
         self.results_dir = results_dir
         self.architecture_name = architecture_name
+        self.num_workers = num_workers
         self.continue_training = continue_training
         self.weights_path = weights_path
         self.experiment_postfix = experiment_postfix
+        self.compile_enabled = compile_enabled
+        self.device = torch.device("cpu")
         self.fit_called = False
         type(self).last_instance = self
 
