@@ -397,5 +397,9 @@ def benchmark_train(
         if trainer.device.type == "cuda"
         else 0
     )
+    trainer.fold_dir.mkdir(parents=True, exist_ok=True)
+    benchmark_path = trainer.fold_dir / "benchmark.json"
+    result["benchmark_path"] = str(benchmark_path)
+    benchmark_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(json.dumps(result, indent=2))
     return result
