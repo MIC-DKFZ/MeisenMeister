@@ -15,6 +15,7 @@ from meisenmeister.training.trainers.mm_trainer import mmTrainer
 from meisenmeister.training.trainers.networks.nnunet_encoder import (
     mmTrainer_NNUNetEncoder,
     mmTrainer_NNUNetEncoder_Finetune_ClassBalanced,
+    mmTrainer_NNUNetEncoder_Finetune_TorchIO,
 )
 
 
@@ -26,6 +27,7 @@ class TrainingRegistryTests(unittest.TestCase):
         self.assertIn("mmTrainer_Debug", registry)
         self.assertIn("mmTrainer_NNUNetEncoder", registry)
         self.assertIn("mmTrainer_NNUNetEncoder_Finetune_ClassBalanced", registry)
+        self.assertIn("mmTrainer_NNUNetEncoder_Finetune_TorchIO", registry)
 
     def test_registry_ignores_non_trainer_classes(self) -> None:
         registry = get_trainer_registry()
@@ -88,6 +90,22 @@ class TrainingRegistryTests(unittest.TestCase):
                 },
             ):
                 trainer = mmTrainer_NNUNetEncoder_Finetune_ClassBalanced(
+                    "001", 0, root, root, root
+                )
+
+        self.assertIsInstance(trainer, BaseTrainer)
+
+    def test_torchio_finetune_trainer_satisfies_base_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with patch(
+                "meisenmeister.training.trainers.mm_trainer.get_fold_sample_ids",
+                return_value={
+                    "train": ["case_001_left", "case_001_right"],
+                    "val": ["case_002_left", "case_002_right"],
+                },
+            ):
+                trainer = mmTrainer_NNUNetEncoder_Finetune_TorchIO(
                     "001", 0, root, root, root
                 )
 

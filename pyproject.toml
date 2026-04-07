@@ -16,6 +16,7 @@ dependencies = [
     "numpy",
     "SimpleITK",
     "torch",
+    "torchio",
     "tqdm",
 ]
 

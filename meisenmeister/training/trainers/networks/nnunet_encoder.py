@@ -6,6 +6,11 @@ import torch
 from torch import nn
 
 from meisenmeister.architectures import get_architecture_class
+from meisenmeister.data_augmentations import (
+    Compose3D,
+    RandomShiftWithinMargin3D,
+    build_default_mri_torchio_pipeline,
+)
 from meisenmeister.training.trainers.mm_trainer import mmTrainer
 
 
@@ -211,3 +216,27 @@ class mmTrainer_NNUNetEncoder_Finetune_ClassBalanced(mmTrainer_NNUNetEncoder_Fin
             class_weights = class_weights.clamp_min(self.MIN_CLASS_WEIGHT)
             self._loss = nn.CrossEntropyLoss(weight=class_weights.to(self.device))
         return self._loss
+
+
+class mmTrainer_NNUNetEncoder_Finetune_TorchIO(mmTrainer_NNUNetEncoder_Finetune):
+    def get_train_augmentation_pipeline(self):
+        if self._train_augmentation_pipeline is None:
+            plans = self.get_preprocessing_plans()
+            max_shift_voxels = tuple(
+                int(margin_axis / spacing_axis)
+                for margin_axis, spacing_axis in zip(
+                    plans["margin_mm"],
+                    plans["target_spacing"],
+                    strict=True,
+                )
+            )
+            self._train_augmentation_pipeline = Compose3D(
+                [
+                    RandomShiftWithinMargin3D(
+                        probability=0.5,
+                        max_shift_voxels=max_shift_voxels,
+                    ),
+                    build_default_mri_torchio_pipeline(),
+                ]
+            )
+        return self._train_augmentation_pipeline

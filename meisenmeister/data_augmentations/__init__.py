@@ -8,6 +8,7 @@ from .spatial_transforms import (
     RandomShiftWithinMargin3D,
     RemoveMargin3D,
 )
+from .torchio_transforms import TorchIOTransform3D, build_default_mri_torchio_pipeline
 
 __all__ = [
     "Compose3D",
@@ -20,5 +21,7 @@ __all__ = [
     "RandomShiftWithinMargin3D",
     "RemoveMargin3D",
     "SampleTransform3D",
+    "TorchIOTransform3D",
     "apply_augmentations",
+    "build_default_mri_torchio_pipeline",
 ]

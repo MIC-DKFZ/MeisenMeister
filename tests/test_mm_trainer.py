@@ -13,10 +13,12 @@ from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 from meisenmeister.architectures import BaseArchitecture
+from meisenmeister.data_augmentations import Compose3D, RandomShiftWithinMargin3D
 from meisenmeister.training.trainers.mm_trainer import mmTrainer
 from meisenmeister.training.trainers.networks.nnunet_encoder import (
     mmTrainer_NNUNetEncoder,
     mmTrainer_NNUNetEncoder_Finetune_ClassBalanced,
+    mmTrainer_NNUNetEncoder_Finetune_TorchIO,
 )
 from meisenmeister.utils.training import (
     build_final_validation_evaluation,
@@ -181,6 +183,43 @@ class MMTrainerTests(unittest.TestCase):
         trainer._val_dataset = _TinyROIDataset([1, 0])
         return trainer
 
+    def _make_torchio_finetune_trainer(
+        self,
+    ) -> mmTrainer_NNUNetEncoder_Finetune_TorchIO:
+        dataset_dir = self.root / "Dataset_001_Test"
+        preprocessed_dataset_dir = self.root / "Dataset_001_Test"
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        (dataset_dir / "dataset.json").write_text("{}", encoding="utf-8")
+        (preprocessed_dataset_dir / "mmPlans.json").write_text(
+            json.dumps(
+                {
+                    "target_shape": [128, 160, 192],
+                    "target_spacing": [1.0, 1.0, 1.0],
+                    "margin_mm": [0.0, 0.0, 0.0],
+                }
+            ),
+            encoding="utf-8",
+        )
+        with patch(
+            "meisenmeister.training.trainers.mm_trainer.get_fold_sample_ids",
+            return_value={
+                "train": ["case_000_left", "case_001_left"],
+                "val": ["case_002_left", "case_003_left"],
+            },
+        ):
+            trainer = mmTrainer_NNUNetEncoder_Finetune_TorchIO(
+                dataset_id="001",
+                fold=0,
+                dataset_dir=dataset_dir,
+                preprocessed_dataset_dir=preprocessed_dataset_dir,
+                results_dir=self.root / "results",
+                num_workers=0,
+            )
+        trainer.device = torch.device("cpu")
+        trainer._train_dataset = _TinyROIDataset([0, 1])
+        trainer._val_dataset = _TinyROIDataset([1, 0])
+        return trainer
+
     def test_fit_copies_portable_inference_metadata_to_experiment_dir(self) -> None:
         trainer = self._make_trainer(num_epochs=0)
 
@@ -215,6 +254,22 @@ class MMTrainerTests(unittest.TestCase):
         self.assertIsInstance(loss, nn.CrossEntropyLoss)
         self.assertIsNotNone(loss.weight)
         self.assertGreater(float(loss.weight[1]), float(loss.weight[0]))
+
+    def test_torchio_finetune_trainer_builds_torchio_pipeline(self) -> None:
+        trainer = self._make_torchio_finetune_trainer()
+        sentinel_pipeline = object()
+
+        with patch(
+            "meisenmeister.training.trainers.networks.nnunet_encoder.build_default_mri_torchio_pipeline",
+            return_value=sentinel_pipeline,
+        ) as mock_build_pipeline:
+            pipeline = trainer.get_train_augmentation_pipeline()
+
+        self.assertIsInstance(pipeline, Compose3D)
+        self.assertEqual(len(pipeline.augmentations), 2)
+        self.assertIsInstance(pipeline.augmentations[0], RandomShiftWithinMargin3D)
+        self.assertIs(pipeline.augmentations[1], sentinel_pipeline)
+        mock_build_pipeline.assert_called_once_with()
 
     def _make_validation_metrics(
         self,
