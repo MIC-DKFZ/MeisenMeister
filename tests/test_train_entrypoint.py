@@ -71,14 +71,13 @@ class TrainEntrypointTests(unittest.TestCase):
                 patch(
                     "meisenmeister.training.train.verify_required_global_paths_set",
                     return_value={
-                        "mm_raw": root,
                         "mm_preprocessed": preprocessed_root,
                         "mm_results": root / "results",
                     },
                 ),
                 patch(
                     "meisenmeister.training.train.find_dataset_dir",
-                    return_value=dataset_dir,
+                    return_value=preprocessed_root / dataset_dir.name,
                 ),
                 patch(
                     "meisenmeister.training.train.get_fold_sample_ids",
@@ -109,7 +108,10 @@ class TrainEntrypointTests(unittest.TestCase):
         self.assertEqual(
             _MockTrainer.last_instance.architecture_name, "MockArchitecture"
         )
-        self.assertEqual(_MockTrainer.last_instance.dataset_dir, dataset_dir)
+        self.assertEqual(
+            _MockTrainer.last_instance.dataset_dir,
+            preprocessed_root / dataset_dir.name,
+        )
         self.assertEqual(
             _MockTrainer.last_instance.preprocessed_dataset_dir,
             preprocessed_root / dataset_dir.name,
@@ -132,14 +134,13 @@ class TrainEntrypointTests(unittest.TestCase):
                 patch(
                     "meisenmeister.training.train.verify_required_global_paths_set",
                     return_value={
-                        "mm_raw": root,
                         "mm_preprocessed": preprocessed_root,
                         "mm_results": root / "results",
                     },
                 ),
                 patch(
                     "meisenmeister.training.train.find_dataset_dir",
-                    return_value=dataset_dir,
+                    return_value=preprocessed_root / dataset_dir.name,
                 ),
                 patch(
                     "meisenmeister.training.train.get_fold_sample_ids",
@@ -194,14 +195,13 @@ class TrainEntrypointTests(unittest.TestCase):
                 patch(
                     "meisenmeister.training.train.verify_required_global_paths_set",
                     return_value={
-                        "mm_raw": root,
                         "mm_preprocessed": preprocessed_root,
                         "mm_results": root / "results",
                     },
                 ),
                 patch(
                     "meisenmeister.training.train.find_dataset_dir",
-                    return_value=dataset_dir,
+                    return_value=preprocessed_root / dataset_dir.name,
                 ),
                 patch(
                     "meisenmeister.training.train.get_fold_sample_ids",
@@ -248,14 +248,13 @@ class TrainEntrypointTests(unittest.TestCase):
                 patch(
                     "meisenmeister.training.train.verify_required_global_paths_set",
                     return_value={
-                        "mm_raw": root,
                         "mm_preprocessed": preprocessed_root,
                         "mm_results": root / "results",
                     },
                 ),
                 patch(
                     "meisenmeister.training.train.find_dataset_dir",
-                    return_value=dataset_dir,
+                    return_value=preprocessed_root / dataset_dir.name,
                 ),
                 patch(
                     "meisenmeister.training.train.get_fold_sample_ids",
@@ -290,14 +289,13 @@ class TrainEntrypointTests(unittest.TestCase):
                 patch(
                     "meisenmeister.training.train.verify_required_global_paths_set",
                     return_value={
-                        "mm_raw": root,
                         "mm_preprocessed": preprocessed_root,
                         "mm_results": root / "results",
                     },
                 ),
                 patch(
                     "meisenmeister.training.train.find_dataset_dir",
-                    return_value=dataset_dir,
+                    return_value=preprocessed_root / dataset_dir.name,
                 ),
                 patch(
                     "meisenmeister.training.train.get_fold_sample_ids",
@@ -331,7 +329,7 @@ class TrainEntrypointTests(unittest.TestCase):
             ValueError,
             "Cannot use --continue-training and --weights together",
         ):
-            train_module.train.__wrapped__(
+            train_module.train(
                 1,
                 fold=0,
                 continue_training=True,
@@ -343,12 +341,52 @@ class TrainEntrypointTests(unittest.TestCase):
             ValueError,
             "Cannot use --val together with --continue-training",
         ):
-            train_module.train.__wrapped__(
+            train_module.train(
                 1,
                 fold=0,
                 continue_training=True,
                 val="last",
             )
+
+    def test_train_requires_only_preprocessed_and_results_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            preprocessed_root = root / "preprocessed"
+            preprocessed_dataset_dir = preprocessed_root / "Dataset_001_Test"
+            results_root = root / "results"
+            preprocessed_dataset_dir.mkdir(parents=True)
+            results_root.mkdir()
+
+            with (
+                patch(
+                    "meisenmeister.training.train.verify_required_global_paths_set",
+                    return_value={
+                        "mm_preprocessed": preprocessed_root,
+                        "mm_results": results_root,
+                    },
+                ),
+                patch(
+                    "meisenmeister.training.train.get_fold_sample_ids",
+                    return_value={
+                        "train": ["case_001_left", "case_001_right"],
+                        "val": ["case_002_left", "case_002_right"],
+                    },
+                ),
+                patch(
+                    "meisenmeister.training.train.get_trainer_class",
+                    return_value=_MockTrainer,
+                ),
+            ):
+                train_module.train(
+                    1,
+                    fold=0,
+                    trainer_name="mmTrainer_Debug",
+                )
+
+        self.assertEqual(
+            _MockTrainer.last_instance.dataset_dir,
+            preprocessed_dataset_dir,
+        )
 
 
 if __name__ == "__main__":

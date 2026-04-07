@@ -29,14 +29,17 @@ def _resolve_path(name: str, current_value: Path | None) -> Path | None:
     return None
 
 
-def verify_required_global_paths_set() -> dict[str, Path]:
+def verify_required_global_paths_set(
+    required_paths: tuple[str, ...] | None = None,
+) -> dict[str, Path]:
     paths = {
         "mm_raw": _resolve_path("mm_raw", mm_raw),
         "mm_preprocessed": _resolve_path("mm_preprocessed", mm_preprocessed),
         "mm_results": _resolve_path("mm_results", mm_results),
     }
+    required_names = tuple(paths) if required_paths is None else required_paths
 
-    missing = [name for name, value in paths.items() if value is None]
+    missing = [name for name in required_names if paths[name] is None]
     if missing:
         missing_str = ", ".join(missing)
         raise ValueError(
@@ -46,7 +49,8 @@ def verify_required_global_paths_set() -> dict[str, Path]:
 
     non_existing = [
         name
-        for name, value in paths.items()
+        for name in required_names
+        for value in [paths[name]]
         if value is not None and not value.exists()
     ]
     if non_existing:

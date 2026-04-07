@@ -9,13 +9,11 @@ from meisenmeister.utils import (
     find_dataset_dir,
     log_message,
     maybe_compile_model,
-    require_global_paths_set,
     run_final_validation_evaluation,
     verify_required_global_paths_set,
 )
 
 
-@require_global_paths_set
 def train(
     d: int,
     fold: int,
@@ -41,13 +39,12 @@ def train(
         raise ValueError("Cannot use --val together with --weights")
 
     dataset_id = f"{d:03d}"
-    paths = verify_required_global_paths_set()
-    mm_raw = paths["mm_raw"]
+    paths = verify_required_global_paths_set(("mm_preprocessed", "mm_results"))
     mm_preprocessed = paths["mm_preprocessed"]
     mm_results = paths["mm_results"]
 
-    dataset_dir = find_dataset_dir(mm_raw, dataset_id)
-    preprocessed_dataset_dir = mm_preprocessed / dataset_dir.name
+    preprocessed_dataset_dir = find_dataset_dir(mm_preprocessed, dataset_id)
+    dataset_dir = preprocessed_dataset_dir
 
     get_fold_sample_ids(preprocessed_dataset_dir, fold)
     trainer_class = get_trainer_class(trainer_name)
