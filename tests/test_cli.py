@@ -19,10 +19,12 @@ class CliTests(unittest.TestCase):
             1,
             fold=0,
             trainer_name="mmTrainer",
+            num_workers=None,
             continue_training=False,
             weights_path=None,
             experiment_postfix=None,
             val=None,
+            compile_enabled=True,
         )
 
     def test_mm_train_passes_explicit_trainer(self) -> None:
@@ -47,10 +49,12 @@ class CliTests(unittest.TestCase):
             1,
             fold=3,
             trainer_name="mmTrainer_Debug",
+            num_workers=None,
             continue_training=False,
             weights_path=None,
             experiment_postfix=None,
             val=None,
+            compile_enabled=True,
         )
 
     def test_mm_train_passes_continue_training_flag(self) -> None:
@@ -64,10 +68,12 @@ class CliTests(unittest.TestCase):
             1,
             fold=0,
             trainer_name="mmTrainer",
+            num_workers=None,
             continue_training=True,
             weights_path=None,
             experiment_postfix=None,
             val=None,
+            compile_enabled=True,
         )
 
     def test_mm_train_passes_weights_and_postfix(self) -> None:
@@ -94,10 +100,12 @@ class CliTests(unittest.TestCase):
             1,
             fold=0,
             trainer_name="mmTrainer",
+            num_workers=None,
             continue_training=False,
             weights_path="/tmp/pretrained.pt",
             experiment_postfix="finetuningNNSSL",
             val=None,
+            compile_enabled=True,
         )
 
     def test_mm_predict_uses_defaults(self) -> None:
@@ -119,6 +127,7 @@ class CliTests(unittest.TestCase):
             experiment_postfix=None,
             checkpoint="best",
             use_tta=True,
+            compile_model=True,
         )
 
     def test_mm_predict_passes_options(self) -> None:
@@ -158,6 +167,7 @@ class CliTests(unittest.TestCase):
             experiment_postfix="finetuningNNSSL",
             checkpoint="last",
             use_tta=False,
+            compile_model=True,
         )
 
     def test_mm_predict_from_modelfolder_passes_options(self) -> None:
@@ -190,6 +200,51 @@ class CliTests(unittest.TestCase):
             folds=[0, 2],
             checkpoint="last",
             use_tta=False,
+            compile_model=True,
+        )
+
+    def test_mm_benchmark_train_passes_options(self) -> None:
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "mm_benchmark_train",
+                    "-d",
+                    "1",
+                    "-f",
+                    "0",
+                    "--trainer",
+                    "mmTrainer_Debug",
+                    "--num-workers",
+                    "6",
+                    "--postfix",
+                    "bench",
+                    "--train-warmup-steps",
+                    "4",
+                    "--train-steps",
+                    "12",
+                    "--val-warmup-steps",
+                    "3",
+                    "--val-steps",
+                    "7",
+                    "--disable-compile",
+                ],
+            ),
+            patch("meisenmeister.cli.benchmark_train") as mock_benchmark,
+        ):
+            cli.mm_benchmark_train()
+
+        mock_benchmark.assert_called_once_with(
+            1,
+            fold=0,
+            trainer_name="mmTrainer_Debug",
+            num_workers=6,
+            experiment_postfix="bench",
+            compile_enabled=False,
+            train_warmup_steps=4,
+            train_steps=12,
+            val_warmup_steps=3,
+            val_steps=7,
         )
 
     def test_mm_create_5fold_writes_to_preprocessed_dataset(self) -> None:

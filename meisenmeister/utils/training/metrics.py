@@ -27,9 +27,28 @@ def aggregate_epoch_metrics(metrics: list[dict]) -> tuple[float, float]:
     if total_samples == 0:
         raise ValueError("Cannot aggregate metrics for an empty epoch")
 
-    total_loss = sum(metric["loss"] * metric["num_samples"] for metric in metrics)
-    total_correct = sum(metric["num_correct"] for metric in metrics)
+    total_loss = sum(
+        _metric_value_to_float(
+            metric["loss_sum"]
+            if "loss_sum" in metric
+            else float(metric["loss"]) * int(metric["num_samples"])
+        )
+        for metric in metrics
+    )
+    total_correct = sum(
+        _metric_value_to_float(metric["num_correct"]) for metric in metrics
+    )
     return total_loss / total_samples, total_correct / total_samples
+
+
+def _metric_value_to_float(value) -> float:
+    if isinstance(value, torch.Tensor):
+        if value.numel() != 1:
+            raise ValueError(
+                "Epoch metric tensors must be scalar values for aggregation"
+            )
+        return float(value.detach().cpu())
+    return float(value)
 
 
 def aggregate_validation_classification_metrics(

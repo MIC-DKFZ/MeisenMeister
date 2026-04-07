@@ -182,6 +182,7 @@ def run_final_validation_evaluation(
     log_fn=None,
 ) -> dict:
     val_metrics = []
+    trainer.get_architecture().eval()
     for batch_idx, batch in enumerate(trainer.get_val_dataloader(), start=1):
         val_metrics.append(trainer.validate_step(batch, batch_idx))
 

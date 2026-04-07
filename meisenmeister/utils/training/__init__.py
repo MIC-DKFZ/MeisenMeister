@@ -36,6 +36,7 @@ from .performance import (
     create_grad_scaler,
     is_amp_enabled,
     maybe_compile_model,
+    resolve_amp_dtype,
     resolve_compile_enabled,
     unwrap_model,
 )
@@ -61,6 +62,7 @@ __all__ = [
     "load_resume_checkpoint",
     "log_message",
     "maybe_compile_model",
+    "resolve_amp_dtype",
     "prepare_output_dir",
     "restore_rng_state",
     "resolve_compile_enabled",

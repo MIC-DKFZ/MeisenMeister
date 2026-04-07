@@ -42,6 +42,7 @@ from meisenmeister.utils.training import (
     log_message,
     maybe_compile_model,
     prepare_output_dir,
+    resolve_amp_dtype,
     resolve_compile_enabled,
     resolve_num_workers,
     restore_rng_state,
@@ -96,7 +97,8 @@ class mmTrainer(BaseTrainer):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         configure_training_performance(self.device)
         self.amp_enabled = is_amp_enabled(self.device)
-        self.grad_scaler = create_grad_scaler(self.device)
+        self.amp_dtype = resolve_amp_dtype(self.device)
+        self.grad_scaler = create_grad_scaler(self.device, self.amp_dtype)
         self.compile_enabled, self.compile_status_message = resolve_compile_enabled(
             self.device,
             enabled=compile_enabled,
@@ -120,6 +122,8 @@ class mmTrainer(BaseTrainer):
         self.plot_path = experiment_paths["plot_path"]
         self._train_dataset = None
         self._val_dataset = None
+        self._train_dataloader = None
+        self._val_dataloader = None
         self._architecture = None
         self._loss = None
         self._optimizer = None
@@ -230,6 +234,7 @@ class mmTrainer(BaseTrainer):
         log_message(f"Initial LR: {self.initial_lr}", self.log_path)
         log_message(f"Weight decay: {self.weight_decay}", self.log_path)
         log_message(f"AMP enabled: {self.amp_enabled}", self.log_path)
+        log_message(f"AMP dtype: {self.amp_dtype}", self.log_path)
         log_message(
             f"Torch compile enabled: {self.compile_enabled}",
             self.log_path,
@@ -247,7 +252,7 @@ class mmTrainer(BaseTrainer):
             f"DataLoader persistent_workers: {self.num_workers > 0}", self.log_path
         )
         log_message(
-            f"DataLoader prefetch_factor: {4 if self.num_workers > 0 else None}",
+            f"DataLoader prefetch_factor: {2 if self.num_workers > 0 else None}",
             self.log_path,
         )
 
@@ -275,6 +280,7 @@ class mmTrainer(BaseTrainer):
                 self.log_path,
             )
 
+            architecture.train()
             train_metrics = []
             for batch_idx, batch in enumerate(train_dataloader, start=1):
                 train_metrics.append(self.train_step(batch, batch_idx))
@@ -283,6 +289,7 @@ class mmTrainer(BaseTrainer):
                 f"Epoch {epoch_idx}/{self.num_epochs} - starting validation loop",
                 self.log_path,
             )
+            architecture.eval()
             val_metrics = []
             for batch_idx, batch in enumerate(val_dataloader, start=1):
                 val_metrics.append(self.validate_step(batch, batch_idx))
@@ -549,24 +556,28 @@ class mmTrainer(BaseTrainer):
         return self._plans
 
     def get_train_dataloader(self):
-        return DataLoader(
-            self.get_train_dataset(),
-            **build_dataloader_kwargs(
-                batch_size=self.batch_size,
-                shuffle=self.shuffle,
-                num_workers=self.num_workers,
-            ),
-        )
+        if self._train_dataloader is None:
+            self._train_dataloader = DataLoader(
+                self.get_train_dataset(),
+                **build_dataloader_kwargs(
+                    batch_size=self.batch_size,
+                    shuffle=self.shuffle,
+                    num_workers=self.num_workers,
+                ),
+            )
+        return self._train_dataloader
 
     def get_val_dataloader(self):
-        return DataLoader(
-            self.get_val_dataset(),
-            **build_dataloader_kwargs(
-                batch_size=self.batch_size,
-                shuffle=False,
-                num_workers=self.num_workers,
-            ),
-        )
+        if self._val_dataloader is None:
+            self._val_dataloader = DataLoader(
+                self.get_val_dataset(),
+                **build_dataloader_kwargs(
+                    batch_size=self.batch_size,
+                    shuffle=False,
+                    num_workers=self.num_workers,
+                ),
+            )
+        return self._val_dataloader
 
     def get_optimizer(self):
         if self._optimizer is None:
@@ -602,10 +613,9 @@ class mmTrainer(BaseTrainer):
         images = batch["image"].to(self.device, dtype=torch.float32, non_blocking=True)
         labels = batch["label"].to(self.device, dtype=torch.long, non_blocking=True)
 
-        architecture.train()
         optimizer.zero_grad(set_to_none=True)
 
-        with autocast_context(self.device):
+        with autocast_context(self.device, self.amp_dtype):
             logits = architecture(images)
             loss = loss_fn(logits, labels)
 
@@ -619,9 +629,9 @@ class mmTrainer(BaseTrainer):
 
         predictions = logits.argmax(dim=1)
         return {
-            "loss": float(loss.detach().item()),
+            "loss_sum": loss.detach() * labels.shape[0],
             "num_samples": int(labels.shape[0]),
-            "num_correct": int((predictions == labels).sum().detach().item()),
+            "num_correct": (predictions == labels).sum().detach(),
         }
 
     def validate_step(self, batch, batch_idx: int):
@@ -631,18 +641,17 @@ class mmTrainer(BaseTrainer):
         images = batch["image"].to(self.device, dtype=torch.float32, non_blocking=True)
         labels = batch["label"].to(self.device, dtype=torch.long, non_blocking=True)
 
-        architecture.eval()
-        with torch.no_grad():
-            with autocast_context(self.device):
+        with torch.inference_mode():
+            with autocast_context(self.device, self.amp_dtype):
                 logits = architecture(images)
                 loss = loss_fn(logits, labels)
             predictions = logits.argmax(dim=1)
             probabilities = torch.softmax(logits.float(), dim=1)
 
         return {
-            "loss": float(loss.detach().item()),
+            "loss_sum": loss.detach() * labels.shape[0],
             "num_samples": int(labels.shape[0]),
-            "num_correct": int((predictions == labels).sum().item()),
+            "num_correct": (predictions == labels).sum().detach(),
             "labels": labels.detach().cpu(),
             "predictions": predictions.detach().cpu(),
             "probabilities": probabilities.detach().cpu(),

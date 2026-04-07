@@ -120,17 +120,22 @@ class RemoveMargin3D:
 
     def __call__(self, sample: dict) -> dict:
         image = sample["image"]
-        mask = np.zeros(image.shape[1:], dtype=image.dtype)
+        masked_image = image.copy()
+        for axis, (axis_size, margin) in enumerate(
+            zip(image.shape[1:], self.margin_voxels, strict=True),
+            start=1,
+        ):
+            if margin <= 0:
+                continue
+            margin = min(margin, axis_size)
+            leading_slice = [slice(None)] * masked_image.ndim
+            leading_slice[axis] = slice(0, margin)
+            masked_image[tuple(leading_slice)] = 0
+            trailing_slice = [slice(None)] * masked_image.ndim
+            trailing_slice[axis] = slice(axis_size - margin, axis_size)
+            masked_image[tuple(trailing_slice)] = 0
 
-        center_slices = []
-        for axis_size, margin in zip(mask.shape, self.margin_voxels, strict=True):
-            start = min(margin, axis_size)
-            stop = max(start, axis_size - margin)
-            center_slices.append(slice(start, stop))
-
-        mask[tuple(center_slices)] = 1
-        masked_image = image * mask[None, ...]
-        return {**sample, "image": masked_image.astype(image.dtype, copy=False)}
+        return {**sample, "image": masked_image}
 
 
 def _resample_channel_with_scale(channel: np.ndarray, scale: float) -> np.ndarray:

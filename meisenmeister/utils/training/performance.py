@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
-from typing import Tuple
 
 import torch
 
@@ -9,6 +8,10 @@ import torch
 def configure_training_performance(device: torch.device) -> None:
     if device.type == "cuda" and torch.backends.cudnn.is_available():
         torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.allow_tf32 = True
+    if device.type == "cuda" and torch.backends.cuda.is_built():
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.set_float32_matmul_precision("high")
 
 
 def resolve_compile_enabled(
@@ -50,13 +53,24 @@ def is_amp_enabled(device: torch.device) -> bool:
     return device.type == "cuda"
 
 
-def create_grad_scaler(device: torch.device):
+def resolve_amp_dtype(device: torch.device) -> torch.dtype | None:
     if not is_amp_enabled(device):
+        return None
+    if torch.cuda.is_bf16_supported():
+        return torch.bfloat16
+    return torch.float16
+
+
+def create_grad_scaler(device: torch.device, amp_dtype: torch.dtype | None):
+    if not is_amp_enabled(device) or amp_dtype != torch.float16:
         return None
     return torch.amp.GradScaler("cuda")
 
 
-def autocast_context(device: torch.device):
+def autocast_context(
+    device: torch.device,
+    amp_dtype: torch.dtype | None,
+):
     if not is_amp_enabled(device):
         return nullcontext()
-    return torch.autocast(device_type=device.type, enabled=True)
+    return torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=True)

@@ -222,10 +222,10 @@ class MMTrainerTests(unittest.TestCase):
 
         metrics = trainer.train_step(batch, batch_idx=1)
 
-        self.assertTrue(torch.isfinite(torch.tensor(metrics["loss"])))
+        self.assertTrue(torch.isfinite(metrics["loss_sum"]))
         self.assertEqual(metrics["num_samples"], 2)
-        self.assertGreaterEqual(metrics["num_correct"], 0)
-        self.assertLessEqual(metrics["num_correct"], 2)
+        self.assertGreaterEqual(int(metrics["num_correct"]), 0)
+        self.assertLessEqual(int(metrics["num_correct"]), 2)
         self.assertFalse(
             torch.equal(before, trainer.get_architecture().fc.weight.detach())
         )
@@ -236,10 +236,10 @@ class MMTrainerTests(unittest.TestCase):
 
         metrics = trainer.validate_step(batch, batch_idx=1)
 
-        self.assertTrue(torch.isfinite(torch.tensor(metrics["loss"])))
+        self.assertTrue(torch.isfinite(metrics["loss_sum"]))
         self.assertEqual(metrics["num_samples"], 2)
-        self.assertGreaterEqual(metrics["num_correct"], 0)
-        self.assertLessEqual(metrics["num_correct"], 2)
+        self.assertGreaterEqual(int(metrics["num_correct"]), 0)
+        self.assertLessEqual(int(metrics["num_correct"]), 2)
         self.assertEqual(tuple(metrics["labels"].shape), (2,))
         self.assertEqual(tuple(metrics["probabilities"].shape), (2, 2))
         self.assertEqual(metrics["sample_ids"], ["case_000_left", "case_001_left"])

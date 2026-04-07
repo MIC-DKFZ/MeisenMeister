@@ -10,6 +10,7 @@ from meisenmeister.plan_and_preprocess.homogenize import homogenize
 from meisenmeister.plan_and_preprocess.plan_and_preprocess import plan_and_preprocess
 from meisenmeister.plan_and_preprocess.plan_experiment import plan_experiment
 from meisenmeister.plan_and_preprocess.preprocess import preprocess
+from meisenmeister.training.benchmark import benchmark_train
 from meisenmeister.training.predict import predict, predict_from_modelfolder
 from meisenmeister.training.splits import create_five_fold_splits
 from meisenmeister.training.train import train
@@ -201,6 +202,82 @@ def mm_train() -> None:
         experiment_postfix=args.postfix,
         val=args.val,
         compile_enabled=not args.disable_compile,
+    )
+
+
+def mm_benchmark_train() -> None:
+    parser = argparse.ArgumentParser(
+        prog="mm_benchmark_train",
+        description="Benchmark the current training stack with warmup and steady-state timing.",
+    )
+    parser.add_argument(
+        "-d",
+        type=int,
+        required=True,
+        help="Integer dataset identifier.",
+    )
+    parser.add_argument(
+        "-f",
+        "--fold",
+        type=int,
+        required=True,
+        help="Fold index from splits.json.",
+    )
+    parser.add_argument(
+        "--trainer",
+        default="mmTrainer",
+        help="Trainer class name registered under meisenmeister.training.trainers.",
+    )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        help="Number of DataLoader worker processes. Defaults to the trainer preset.",
+    )
+    parser.add_argument(
+        "--postfix",
+        help="Optional suffix appended to the experiment name.",
+    )
+    parser.add_argument(
+        "--train-warmup-steps",
+        type=int,
+        default=3,
+        help="Number of train iterations to exclude as warmup.",
+    )
+    parser.add_argument(
+        "--train-steps",
+        type=int,
+        default=10,
+        help="Number of steady-state train iterations to measure.",
+    )
+    parser.add_argument(
+        "--val-warmup-steps",
+        type=int,
+        default=2,
+        help="Number of validation iterations to exclude as warmup.",
+    )
+    parser.add_argument(
+        "--val-steps",
+        type=int,
+        default=5,
+        help="Number of steady-state validation iterations to measure.",
+    )
+    parser.add_argument(
+        "--disable-compile",
+        action="store_true",
+        help="Disable torch.compile for benchmarking.",
+    )
+    args = parser.parse_args()
+    benchmark_train(
+        args.d,
+        fold=args.fold,
+        trainer_name=args.trainer,
+        num_workers=args.num_workers,
+        experiment_postfix=args.postfix,
+        compile_enabled=not args.disable_compile,
+        train_warmup_steps=args.train_warmup_steps,
+        train_steps=args.train_steps,
+        val_warmup_steps=args.val_warmup_steps,
+        val_steps=args.val_steps,
     )
 
 
