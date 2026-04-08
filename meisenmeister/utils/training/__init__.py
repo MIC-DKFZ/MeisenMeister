@@ -4,6 +4,7 @@ from .artifacts import (
     format_metric,
     log_message,
     prepare_output_dir,
+    save_da_preview,
     save_training_curves,
 )
 from .checkpoints import (
@@ -69,6 +70,7 @@ __all__ = [
     "restore_checkpoint_payload",
     "resolve_num_workers",
     "run_final_validation_evaluation",
+    "save_da_preview",
     "save_checkpoint",
     "save_final_validation_evaluation",
     "save_training_curves",

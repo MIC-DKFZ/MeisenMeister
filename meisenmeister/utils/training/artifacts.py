@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import matplotlib
+import numpy as np
 
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt
@@ -37,6 +38,7 @@ def build_experiment_paths(
         "eval_last_path": fold_dir / "eval_last.json",
         "eval_best_path": fold_dir / "eval_best.json",
         "plot_path": fold_dir / "training_curves.png",
+        "da_preview_path": fold_dir / "da_preview.png",
     }
 
 
@@ -174,3 +176,81 @@ def save_training_curves(history: dict[str, list[float]], plot_path: Path) -> No
     figure.tight_layout()
     figure.savefig(plot_path)
     plt.close(figure)
+
+
+def save_da_preview(
+    samples: list[dict],
+    plot_path: Path,
+    *,
+    slice_titles: tuple[str, str, str] = ("axial", "coronal", "sagittal"),
+) -> None:
+    if not samples:
+        raise ValueError("At least one sample is required to save a DA preview")
+
+    first_image = np.asarray(_to_numpy_image(samples[0]["image"]))
+    if first_image.ndim != 4:
+        raise ValueError(
+            "DA preview expects channel-first 4D images with shape (C, D, H, W)"
+        )
+    num_channels = int(first_image.shape[0])
+    num_rows = len(samples) * num_channels
+    figure, axes = plt.subplots(
+        num_rows,
+        3,
+        figsize=(9, max(3, num_rows * 2)),
+        squeeze=False,
+    )
+
+    row_index = 0
+    for sample in samples:
+        image = np.asarray(_to_numpy_image(sample["image"]), dtype=np.float32)
+        if image.ndim != 4:
+            raise ValueError(
+                "DA preview expects channel-first 4D images with shape (C, D, H, W)"
+            )
+        if int(image.shape[0]) != num_channels:
+            raise ValueError("All DA preview samples must have the same channel count")
+
+        sample_id = str(sample.get("sample_id", f"sample_{row_index}"))
+        for channel_index in range(num_channels):
+            channel = image[channel_index]
+            for column_index, slice_2d in enumerate(_extract_mid_slices(channel)):
+                axis = axes[row_index, column_index]
+                axis.imshow(slice_2d, cmap="gray")
+                axis.set_xticks([])
+                axis.set_yticks([])
+                if row_index == 0:
+                    axis.set_title(slice_titles[column_index])
+            axes[row_index, 0].set_ylabel(
+                f"{sample_id}\nch {channel_index}",
+                rotation=0,
+                labelpad=32,
+                va="center",
+            )
+            row_index += 1
+
+    figure.tight_layout()
+    figure.savefig(plot_path, dpi=100, bbox_inches="tight")
+    plt.close(figure)
+
+
+def _to_numpy_image(image) -> np.ndarray:
+    if hasattr(image, "detach"):
+        return image.detach().cpu().numpy()
+    return np.asarray(image)
+
+
+def _extract_mid_slices(
+    channel: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if channel.ndim != 3:
+        raise ValueError(
+            f"DA preview expects 3D channel data with shape (D, H, W), got {channel.shape!r}"
+        )
+    depth_mid = channel.shape[0] // 2
+    height_mid = channel.shape[1] // 2
+    width_mid = channel.shape[2] // 2
+    axial = channel[depth_mid, :, :]
+    coronal = channel[:, height_mid, :]
+    sagittal = channel[:, :, width_mid]
+    return axial, coronal, sagittal

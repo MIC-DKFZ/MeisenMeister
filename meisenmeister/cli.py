@@ -12,6 +12,7 @@ from meisenmeister.plan_and_preprocess.plan_experiment import plan_experiment
 from meisenmeister.plan_and_preprocess.preprocess import preprocess
 from meisenmeister.training.benchmark import benchmark_train
 from meisenmeister.training.predict import predict, predict_from_modelfolder
+from meisenmeister.training.preview_da import preview_da
 from meisenmeister.training.splits import create_five_fold_splits
 from meisenmeister.training.train import train
 from meisenmeister.utils import (
@@ -203,6 +204,62 @@ def mm_train() -> None:
         val=args.val,
         compile_enabled=not args.disable_compile,
     )
+
+
+def mm_preview_da() -> None:
+    parser = argparse.ArgumentParser(
+        prog="mm_preview_da",
+        description="Load the training dataset with a selected trainer's DA pipeline and write a preview PNG.",
+    )
+    parser.add_argument(
+        "-d",
+        type=int,
+        required=True,
+        help="Integer dataset identifier.",
+    )
+    parser.add_argument(
+        "-f",
+        "--fold",
+        type=int,
+        required=True,
+        help="Fold index from splits.json.",
+    )
+    parser.add_argument(
+        "--trainer",
+        default="mmTrainer",
+        help="Trainer class name whose training dataset and augmentation pipeline should be used.",
+    )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        help="Optional worker-count setting passed into the selected trainer.",
+    )
+    parser.add_argument(
+        "--postfix",
+        help="Optional suffix appended to the experiment name when resolving the default output path.",
+    )
+    parser.add_argument(
+        "--num-samples",
+        type=int,
+        default=3,
+        help="Number of random training samples to visualize.",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        help="Optional output PNG path. Defaults to the trainer fold directory da_preview.png.",
+    )
+    args = parser.parse_args()
+    output_path = preview_da(
+        args.d,
+        fold=args.fold,
+        trainer_name=args.trainer,
+        num_workers=args.num_workers,
+        experiment_postfix=args.postfix,
+        num_samples=args.num_samples,
+        output_path=args.output,
+    )
+    print(output_path)
 
 
 def mm_benchmark_train() -> None:

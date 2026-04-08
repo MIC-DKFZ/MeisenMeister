@@ -9,6 +9,7 @@ from meisenmeister.architectures import (
 
 from .base_trainer import BaseTrainer
 from .predict import predict, predict_from_modelfolder
+from .preview_da import preview_da
 from .registry import (
     get_available_trainer_names,
     get_trainer_class,
@@ -38,6 +39,7 @@ __all__ = [
     "mmTrainer_NNUNetEncoder_Finetune",
     "predict",
     "predict_from_modelfolder",
+    "preview_da",
     "get_available_trainer_names",
     "get_trainer_class",
     "get_trainer_registry",

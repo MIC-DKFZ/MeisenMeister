@@ -23,6 +23,7 @@ from meisenmeister.training.trainers.networks.nnunet_encoder import (
 from meisenmeister.utils.training import (
     build_final_validation_evaluation,
     compute_stratified_bootstrap_interval,
+    save_da_preview,
 )
 
 
@@ -234,6 +235,38 @@ class MMTrainerTests(unittest.TestCase):
         self.assertTrue((trainer.experiment_dir / "dataset.json").is_file())
         self.assertTrue((trainer.experiment_dir / "mmPlans.json").is_file())
         mock_final_eval.assert_called_once()
+
+    def test_save_da_preview_writes_and_overwrites_png(self) -> None:
+        plot_path = self.root / "da_preview.png"
+        samples = [
+            {
+                "image": torch.full(
+                    (3, 4, 5, 6), float(index + 1), dtype=torch.float32
+                ),
+                "sample_id": f"case_{index:03d}_left",
+            }
+            for index in range(3)
+        ]
+
+        save_da_preview(samples, plot_path)
+        first_size = plot_path.stat().st_size
+
+        updated_samples = [
+            {
+                "image": torch.full(
+                    (3, 4, 5, 6),
+                    float(index + 11),
+                    dtype=torch.float32,
+                ),
+                "sample_id": f"case_{index:03d}_left",
+            }
+            for index in range(3)
+        ]
+        save_da_preview(updated_samples, plot_path)
+
+        self.assertTrue(plot_path.is_file())
+        self.assertGreater(first_size, 0)
+        self.assertGreater(plot_path.stat().st_size, 0)
 
     def test_nnunet_trainer_rejects_incompatible_target_shape_early(self) -> None:
         trainer = self._make_nnunet_trainer(target_shape=[129, 165, 184])

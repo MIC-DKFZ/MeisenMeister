@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -26,6 +27,55 @@ class CliTests(unittest.TestCase):
             val=None,
             compile_enabled=True,
         )
+
+    def test_mm_preview_da_passes_options(self) -> None:
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "mm_preview_da",
+                    "-d",
+                    "1",
+                    "-f",
+                    "0",
+                    "--trainer",
+                    "mmTrainer_Debug",
+                    "--num-workers",
+                    "4",
+                    "--postfix",
+                    "debug",
+                    "--num-samples",
+                    "5",
+                    "--output",
+                    "/tmp/da_preview.png",
+                ],
+            ),
+            patch("meisenmeister.cli.preview_da") as mock_preview_da,
+        ):
+            cli.mm_preview_da()
+
+        mock_preview_da.assert_called_once_with(
+            1,
+            fold=0,
+            trainer_name="mmTrainer_Debug",
+            num_workers=4,
+            experiment_postfix="debug",
+            num_samples=5,
+            output_path="/tmp/da_preview.png",
+        )
+
+    def test_mm_preview_da_prints_output_path(self) -> None:
+        with (
+            patch("sys.argv", ["mm_preview_da", "-d", "1", "-f", "0"]),
+            patch(
+                "meisenmeister.cli.preview_da",
+                return_value=Path("/tmp/da_preview.png"),
+            ),
+            patch("sys.stdout", new_callable=io.StringIO) as mock_stdout,
+        ):
+            cli.mm_preview_da()
+
+        self.assertEqual(mock_stdout.getvalue().strip(), "/tmp/da_preview.png")
 
     def test_mm_train_passes_explicit_trainer(self) -> None:
         with (
