@@ -118,10 +118,14 @@ def export_validation_grad_cam(
                     f"prediction={result['prediction']})",
                     log_path,
                 )
-    return metadata_path if metadata_predictions else write_grad_cam_metadata(
-        output_dir,
-        run_metadata=run_metadata,
-        predictions=metadata_predictions,
+    return (
+        metadata_path
+        if metadata_predictions
+        else write_grad_cam_metadata(
+            output_dir,
+            run_metadata=run_metadata,
+            predictions=metadata_predictions,
+        )
     )
 
 
