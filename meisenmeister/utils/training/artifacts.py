@@ -13,6 +13,13 @@ matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 
 _LOGGER_CACHE: dict[Path, logging.Logger] = {}
+_TRAINING_CURVE_COLORS = {
+    "train_loss": "#0072B2",
+    "val_loss": "#D55E00",
+    "val_balanced_accuracy": "#009E73",
+    "val_macro_auc": "#CC79A7",
+    "ema_val_balanced_accuracy": "#E69F00",
+}
 
 
 def build_experiment_paths(
@@ -145,21 +152,57 @@ def save_training_curves(history: dict[str, list[float]], plot_path: Path) -> No
     epochs = history["epoch"]
     figure, axes = plt.subplots(3, 1, figsize=(12, 12), sharex=True)
 
-    axes[0].plot(epochs, history["train_loss"], label="train_loss")
-    axes[0].plot(epochs, history["val_loss"], label="val_loss")
-    axes[0].plot(
-        epochs,
-        history["val_balanced_accuracy"],
-        label="val_balanced_accuracy",
+    metric_axis = axes[0].twinx()
+
+    loss_lines = []
+    loss_lines.extend(
+        axes[0].plot(
+            epochs,
+            history["train_loss"],
+            label="train_loss",
+            color=_TRAINING_CURVE_COLORS["train_loss"],
+        )
     )
-    axes[0].plot(epochs, history["val_macro_auc"], label="val_macro_auc")
-    axes[0].plot(
-        epochs,
-        history["ema_val_balanced_accuracy"],
-        label="ema_val_balanced_accuracy",
+    loss_lines.extend(
+        axes[0].plot(
+            epochs,
+            history["val_loss"],
+            label="val_loss",
+            color=_TRAINING_CURVE_COLORS["val_loss"],
+        )
     )
-    axes[0].set_ylabel("metrics")
-    axes[0].legend(loc="best")
+    metric_lines = []
+    metric_lines.extend(
+        metric_axis.plot(
+            epochs,
+            history["val_balanced_accuracy"],
+            label="val_balanced_accuracy",
+            color=_TRAINING_CURVE_COLORS["val_balanced_accuracy"],
+        )
+    )
+    metric_lines.append(
+        metric_axis.plot(
+            epochs,
+            history["val_macro_auc"],
+            label="val_macro_auc",
+            color=_TRAINING_CURVE_COLORS["val_macro_auc"],
+        )[0]
+    )
+    metric_lines.extend(
+        metric_axis.plot(
+            epochs,
+            history["ema_val_balanced_accuracy"],
+            label="ema_val_balanced_accuracy",
+            color=_TRAINING_CURVE_COLORS["ema_val_balanced_accuracy"],
+        )
+    )
+    axes[0].set_ylabel("loss")
+    metric_axis.set_ylabel("metrics")
+    axes[0].legend(
+        loss_lines + metric_lines,
+        [line.get_label() for line in loss_lines + metric_lines],
+        loc="best",
+    )
     axes[0].grid(True, alpha=0.3)
 
     axes[1].plot(epochs, history["epoch_time_sec"], label="epoch_time_sec")
