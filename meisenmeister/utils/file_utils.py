@@ -36,12 +36,108 @@ def load_dataset_json(dataset_dir: Path) -> dict:
             f"dataset.json in {dataset_dir} is missing required keys: {missing_keys_str}"
         )
 
+    if "training_cases" in dataset_json:
+        _resolve_training_case_files(dataset_dir, dataset_json)
+
     return dataset_json
+
+
+def _resolve_training_case_path(dataset_dir: Path, path_value: str) -> Path:
+    source_path = Path(path_value)
+    if source_path.is_absolute():
+        return source_path.resolve(strict=False)
+    return (dataset_dir / source_path).resolve(strict=False)
+
+
+def _sort_channel_ids(channel_ids: set[str]) -> list[str]:
+    return sorted(channel_ids, key=int)
+
+
+def _resolve_training_case_files(
+    dataset_dir: Path,
+    dataset_json: dict,
+) -> dict[str, list[Path]]:
+    training_cases = dataset_json["training_cases"]
+    if not isinstance(training_cases, dict):
+        raise TypeError(
+            "dataset.json key 'training_cases' must be a mapping of case ids to channel path mappings"
+        )
+
+    expected_num_cases = int(dataset_json["numTraining"])
+    if len(training_cases) != expected_num_cases:
+        raise ValueError(
+            f"dataset.json declares numTraining={expected_num_cases}, but "
+            f"training_cases contains {len(training_cases)} cases"
+        )
+
+    channel_names = dataset_json["channel_names"]
+    expected_channel_ids = _sort_channel_ids(set(channel_names))
+    expected_channel_id_set = set(expected_channel_ids)
+    file_ending = dataset_json["file_ending"]
+
+    resolved_case_files: dict[str, list[Path]] = {}
+    for case_id, case_channels in sorted(training_cases.items()):
+        if not isinstance(case_id, str) or not case_id:
+            raise ValueError(
+                "dataset.json training_cases keys must be non-empty case id strings"
+            )
+        if not isinstance(case_channels, dict):
+            raise TypeError(
+                f"dataset.json training_cases['{case_id}'] must be a mapping of channel ids to file paths"
+            )
+
+        case_channel_ids = set(case_channels)
+        missing_channel_ids = [
+            channel_id
+            for channel_id in expected_channel_ids
+            if channel_id not in case_channel_ids
+        ]
+        extra_channel_ids = _sort_channel_ids(
+            {
+                channel_id
+                for channel_id in case_channel_ids
+                if channel_id not in expected_channel_id_set
+            }
+        )
+        if missing_channel_ids or extra_channel_ids:
+            raise ValueError(
+                f"dataset.json training_cases['{case_id}'] must define exactly "
+                f"channels {expected_channel_ids}; missing={missing_channel_ids}, "
+                f"extra={extra_channel_ids}"
+            )
+
+        resolved_files: list[Path] = []
+        for channel_id in expected_channel_ids:
+            path_value = case_channels[channel_id]
+            if not isinstance(path_value, str) or not path_value:
+                raise TypeError(
+                    f"dataset.json training_cases['{case_id}']['{channel_id}'] must be a non-empty filepath string"
+                )
+
+            resolved_path = _resolve_training_case_path(dataset_dir, path_value)
+            if not resolved_path.name.endswith(file_ending):
+                raise ValueError(
+                    f"dataset.json training_cases['{case_id}']['{channel_id}'] must end "
+                    f"with '{file_ending}', got '{resolved_path.name}'"
+                )
+            if not resolved_path.is_file():
+                raise FileNotFoundError(
+                    f"Missing training_cases file for case '{case_id}' channel "
+                    f"'{channel_id}': {resolved_path}"
+                )
+            resolved_files.append(resolved_path)
+
+        resolved_case_files[case_id] = resolved_files
+
+    return resolved_case_files
 
 
 def verify_training_files_present(
     dataset_dir: Path, dataset_json: dict
 ) -> dict[str, list[Path]]:
+    if "training_cases" in dataset_json:
+        return _resolve_training_case_files(dataset_dir, dataset_json)
+
     images_tr_dir = dataset_dir / "imagesTr"
     return discover_case_files(
         images_tr_dir,

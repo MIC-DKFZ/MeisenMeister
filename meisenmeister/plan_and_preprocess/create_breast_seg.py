@@ -58,6 +58,21 @@ def _stage_primary_inputs(
     return staged_case_ids
 
 
+def _filter_cases_missing_masks(
+    case_files: dict[str, list[Path]],
+    *,
+    masks_tr_dir: Path,
+    file_ending: str,
+) -> dict[str, list[Path]]:
+    pending_case_files: dict[str, list[Path]] = {}
+    for case_id, files in sorted(case_files.items()):
+        mask_path = masks_tr_dir / f"{case_id}{file_ending}"
+        if mask_path.is_file():
+            continue
+        pending_case_files[case_id] = files
+    return pending_case_files
+
+
 def _verify_masks_written(
     *,
     staged_case_ids: list[str],
@@ -84,11 +99,16 @@ def create_breast_segmentations(d: int) -> tuple[Path, Path]:
     images_tr_dir = dataset_dir / "imagesTr"
     masks_tr_dir = dataset_dir / "masksTr"
 
-    if not images_tr_dir.is_dir():
-        raise FileNotFoundError(f"Missing imagesTr directory in {dataset_dir}")
-
     masks_tr_dir.mkdir(parents=True, exist_ok=True)
     file_ending = dataset_json["file_ending"]
+    pending_case_files = _filter_cases_missing_masks(
+        case_files,
+        masks_tr_dir=masks_tr_dir,
+        file_ending=file_ending,
+    )
+    if not pending_case_files:
+        return images_tr_dir, masks_tr_dir
+
     predictor = get_breast_segmentation_predictor()
 
     with tempfile.TemporaryDirectory(
@@ -100,7 +120,7 @@ def create_breast_segmentations(d: int) -> tuple[Path, Path]:
         staging_input_dir.mkdir()
 
         staged_case_ids = _stage_primary_inputs(
-            case_files,
+            pending_case_files,
             staging_input_dir=staging_input_dir,
             file_ending=file_ending,
         )
