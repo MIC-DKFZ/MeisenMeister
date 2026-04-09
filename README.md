@@ -2,7 +2,7 @@
 
 Meisenmeister is a framework for breast cancer classification on DCE-MRI. It is designed to help develop reproducible multi-stage pipelines, from dataset fingerprinting and experiment planning to ROI preprocessing, fold-safe training, benchmarking, and ROI-level inference.
 
-> **Competition result:** We won the **MICCAI 2025 ODELIA Breast MRI Challenge** on Grand Challenge: https://odelia2025.grand-challenge.org/
+> 🏆 We won the **MICCAI 2025 ODELIA Breast MRI Challenge** on Grand Challenge: https://odelia2025.grand-challenge.org/
 
 ## Installation
 
