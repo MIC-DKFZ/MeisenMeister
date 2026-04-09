@@ -1,8 +1,8 @@
-# Meisenmeister
+# MeisenMeister
 
-Meisenmeister is a framework for breast cancer classification on DCE-MRI. It is designed to help develop reproducible multi-stage pipelines, from dataset fingerprinting and experiment planning to ROI preprocessing, fold-safe training, benchmarking, and ROI-level inference.
+MeisenMeister is a framework for breast cancer classification on DCE-MRI. It is designed to help develop reproducible multi-stage pipelines, from dataset fingerprinting and experiment planning to ROI preprocessing, fold-safe training, benchmarking, and ROI-level inference.
 
-> 🏆 We won the **MICCAI 2025 ODELIA Breast MRI Challenge** on Grand Challenge: https://odelia2025.grand-challenge.org/
+> 🏆 Winning solution of the **MICCAI 2025 ODELIA Breast MRI Challenge** on Grand Challenge: https://odelia2025.grand-challenge.org/
 
 ## Installation
 
@@ -14,7 +14,7 @@ pip install -e .
 
 ## Environment Configuration
 
-Meisenmeister resolves datasets and outputs via three required storage roots:
+MeisenMeister resolves datasets and outputs via three required storage roots:
 
 - `MM_RAW`
 - `MM_PREPROCESSED`
@@ -95,7 +95,7 @@ Model weights are licensed under **CC BY-NC-SA 4.0** due to downstream dataset l
 
 ## Citation
 
-If you use Meisenmeister in research, please cite:
+If you use MeisenMeister in research, please cite:
 
 Hamm, B., Kirchhoff, Y., Rokuss, M., and Maier-Hein, K., *MeisenMeister: A Simple Two Stage Pipeline for Breast Cancer Classification on MRI*, arXiv:2510.27326 [cs.CV], 2025.
 
