@@ -28,6 +28,7 @@ class _MockTrainer:
         weights_path: Path | None = None,
         experiment_postfix: str | None = None,
         compile_enabled: bool = True,
+        grad_cam_enabled: bool = False,
     ):
         self.dataset_id = dataset_id
         self.fold = fold
@@ -40,8 +41,10 @@ class _MockTrainer:
         self.weights_path = weights_path
         self.experiment_postfix = experiment_postfix
         self.compile_enabled = compile_enabled
+        self.grad_cam_enabled = grad_cam_enabled
         self.device = torch.device("cpu")
         self.fit_called = False
+        self.grad_cam_checked = False
         type(self).last_instance = self
 
     def fit(self) -> None:
@@ -56,6 +59,9 @@ class _MockTrainer:
                 self.outer.loaded_state_dict = state_dict
 
         return _Arch(self)
+
+    def ensure_grad_cam_available(self) -> None:
+        self.grad_cam_checked = True
 
 
 class TrainEntrypointTests(unittest.TestCase):
@@ -120,6 +126,8 @@ class TrainEntrypointTests(unittest.TestCase):
         self.assertFalse(_MockTrainer.last_instance.continue_training)
         self.assertIsNone(_MockTrainer.last_instance.weights_path)
         self.assertIsNone(_MockTrainer.last_instance.experiment_postfix)
+        self.assertFalse(_MockTrainer.last_instance.grad_cam_enabled)
+        self.assertFalse(_MockTrainer.last_instance.grad_cam_checked)
         self.assertTrue(_MockTrainer.last_instance.fit_called)
 
     def test_train_val_last_loads_last_checkpoint_and_runs_evaluation(self) -> None:
@@ -235,6 +243,7 @@ class TrainEntrypointTests(unittest.TestCase):
         self.assertIn(
             "eval_best.json", str(mock_run_eval.call_args.kwargs["output_path"])
         )
+        self.assertIsNone(mock_run_eval.call_args.kwargs["grad_cam_output_dir"])
 
     def test_train_passes_continue_training_to_trainer(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -276,6 +285,134 @@ class TrainEntrypointTests(unittest.TestCase):
                 )
 
         self.assertTrue(_MockTrainer.last_instance.continue_training)
+
+    def test_train_only_checks_grad_cam_when_enabled(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            dataset_dir = root / "Dataset_001_Test"
+            preprocessed_root = root / "preprocessed"
+            dataset_dir.mkdir()
+            preprocessed_root.mkdir()
+
+            with (
+                patch(
+                    "meisenmeister.training.train.verify_required_global_paths_set",
+                    return_value={
+                        "mm_preprocessed": preprocessed_root,
+                        "mm_results": root / "results",
+                    },
+                ),
+                patch(
+                    "meisenmeister.training.train.find_dataset_dir",
+                    return_value=preprocessed_root / dataset_dir.name,
+                ),
+                patch(
+                    "meisenmeister.training.train.get_fold_sample_ids",
+                    return_value={"train": ["a"], "val": ["b"]},
+                ),
+                patch(
+                    "meisenmeister.training.train.get_trainer_class",
+                    return_value=_MockTrainer,
+                ),
+            ):
+                train_module.train(1, fold=0, trainer_name="mmTrainer_Debug")
+
+        self.assertFalse(_MockTrainer.last_instance.grad_cam_checked)
+
+    def test_train_checks_grad_cam_when_enabled(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            dataset_dir = root / "Dataset_001_Test"
+            preprocessed_root = root / "preprocessed"
+            dataset_dir.mkdir()
+            preprocessed_root.mkdir()
+
+            with (
+                patch(
+                    "meisenmeister.training.train.verify_required_global_paths_set",
+                    return_value={
+                        "mm_preprocessed": preprocessed_root,
+                        "mm_results": root / "results",
+                    },
+                ),
+                patch(
+                    "meisenmeister.training.train.find_dataset_dir",
+                    return_value=preprocessed_root / dataset_dir.name,
+                ),
+                patch(
+                    "meisenmeister.training.train.get_fold_sample_ids",
+                    return_value={"train": ["a"], "val": ["b"]},
+                ),
+                patch(
+                    "meisenmeister.training.train.get_trainer_class",
+                    return_value=_MockTrainer,
+                ),
+            ):
+                train_module.train(
+                    1,
+                    fold=0,
+                    trainer_name="mmTrainer_Debug",
+                    grad_cam_enabled=True,
+                )
+
+        self.assertTrue(_MockTrainer.last_instance.grad_cam_enabled)
+        self.assertTrue(_MockTrainer.last_instance.grad_cam_checked)
+
+    def test_train_val_with_grad_cam_passes_output_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            dataset_dir = root / "Dataset_001_Test"
+            preprocessed_root = root / "preprocessed"
+            dataset_dir.mkdir()
+            preprocessed_root.mkdir()
+
+            with (
+                patch(
+                    "meisenmeister.training.train.verify_required_global_paths_set",
+                    return_value={
+                        "mm_preprocessed": preprocessed_root,
+                        "mm_results": root / "results",
+                    },
+                ),
+                patch(
+                    "meisenmeister.training.train.find_dataset_dir",
+                    return_value=preprocessed_root / dataset_dir.name,
+                ),
+                patch(
+                    "meisenmeister.training.train.get_fold_sample_ids",
+                    return_value={
+                        "train": ["case_001_left"],
+                        "val": ["case_002_left"],
+                    },
+                ),
+                patch(
+                    "meisenmeister.training.train.get_trainer_class",
+                    return_value=_MockTrainer,
+                ),
+                patch(
+                    "meisenmeister.training.train.torch.load",
+                    return_value={"model_state_dict": {"weight": 1}},
+                ),
+                patch(
+                    "meisenmeister.training.train.run_final_validation_evaluation"
+                ) as mock_run_eval,
+            ):
+                train_module.train(
+                    1,
+                    fold=0,
+                    trainer_name="mmTrainer_Debug",
+                    val="last",
+                    grad_cam_enabled=True,
+                )
+
+        self.assertTrue(_MockTrainer.last_instance.grad_cam_checked)
+        self.assertIn(
+            "grad_cam_last",
+            str(mock_run_eval.call_args.kwargs["grad_cam_output_dir"]),
+        )
+        self.assertEqual(
+            mock_run_eval.call_args.kwargs["grad_cam_checkpoint_kind"], "last"
+        )
 
     def test_train_passes_weights_and_postfix_to_trainer(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

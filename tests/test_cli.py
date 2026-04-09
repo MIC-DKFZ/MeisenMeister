@@ -26,6 +26,7 @@ class CliTests(unittest.TestCase):
             experiment_postfix=None,
             val=None,
             compile_enabled=True,
+            grad_cam_enabled=False,
         )
 
     def test_mm_preview_da_passes_options(self) -> None:
@@ -105,6 +106,7 @@ class CliTests(unittest.TestCase):
             experiment_postfix=None,
             val=None,
             compile_enabled=True,
+            grad_cam_enabled=False,
         )
 
     def test_mm_train_passes_continue_training_flag(self) -> None:
@@ -124,6 +126,7 @@ class CliTests(unittest.TestCase):
             experiment_postfix=None,
             val=None,
             compile_enabled=True,
+            grad_cam_enabled=False,
         )
 
     def test_mm_train_passes_weights_and_postfix(self) -> None:
@@ -156,6 +159,30 @@ class CliTests(unittest.TestCase):
             experiment_postfix="finetuningNNSSL",
             val=None,
             compile_enabled=True,
+            grad_cam_enabled=False,
+        )
+
+    def test_mm_train_passes_grad_cam_flag(self) -> None:
+        with (
+            patch(
+                "sys.argv",
+                ["mm_train", "-d", "1", "-f", "0", "--val", "best", "--grad-cam"],
+            ),
+            patch("meisenmeister.cli.train") as mock_train,
+        ):
+            cli.mm_train()
+
+        mock_train.assert_called_once_with(
+            1,
+            fold=0,
+            trainer_name="mmTrainer",
+            num_workers=None,
+            continue_training=False,
+            weights_path=None,
+            experiment_postfix=None,
+            val="best",
+            compile_enabled=True,
+            grad_cam_enabled=True,
         )
 
     def test_mm_predict_uses_defaults(self) -> None:

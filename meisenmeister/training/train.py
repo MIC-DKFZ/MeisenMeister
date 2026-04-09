@@ -24,6 +24,7 @@ def train(
     experiment_postfix: str | None = None,
     val: str | None = None,
     compile_enabled: bool = True,
+    grad_cam_enabled: bool = False,
 ) -> None:
     if not 0 <= d <= 999:
         raise ValueError(f"Dataset id must be between 0 and 999, got {d}")
@@ -61,7 +62,10 @@ def train(
         weights_path=None if weights_path is None else Path(weights_path),
         experiment_postfix=experiment_postfix,
         compile_enabled=compile_enabled,
+        grad_cam_enabled=grad_cam_enabled,
     )
+    if grad_cam_enabled:
+        trainer.ensure_grad_cam_available()
     if val is None:
         trainer.fit()
         return
@@ -116,4 +120,10 @@ def train(
         confidence_level=getattr(trainer, "FINAL_EVAL_CONFIDENCE_LEVEL", 0.95),
         seed=getattr(trainer, "FINAL_EVAL_BOOTSTRAP_SEED", 0),
         log_fn=log_message,
+        grad_cam_output_dir=(
+            experiment_paths["grad_cam_last_dir"]
+            if grad_cam_enabled and val == "last"
+            else (experiment_paths["grad_cam_best_dir"] if grad_cam_enabled else None)
+        ),
+        grad_cam_checkpoint_kind=val,
     )

@@ -72,6 +72,7 @@ class mmTrainer_NNUNetEncoder(mmTrainer):
         weights_path=None,
         experiment_postfix: str | None = None,
         compile_enabled: bool = True,
+        grad_cam_enabled: bool = False,
     ) -> None:
         super().__init__(
             dataset_id=dataset_id,
@@ -85,6 +86,7 @@ class mmTrainer_NNUNetEncoder(mmTrainer):
             weights_path=weights_path,
             experiment_postfix=experiment_postfix,
             compile_enabled=compile_enabled,
+            grad_cam_enabled=grad_cam_enabled,
         )
 
     def fit(self) -> None:
@@ -139,6 +141,7 @@ class mmTrainer_NNUNetEncoder_Finetune(mmTrainer_NNUNetEncoder):
         weights_path=None,
         experiment_postfix: str | None = None,
         compile_enabled: bool = True,
+        grad_cam_enabled: bool = False,
     ) -> None:
         super().__init__(
             dataset_id=dataset_id,
@@ -152,6 +155,7 @@ class mmTrainer_NNUNetEncoder_Finetune(mmTrainer_NNUNetEncoder):
             weights_path=weights_path,
             experiment_postfix=experiment_postfix,
             compile_enabled=compile_enabled,
+            grad_cam_enabled=grad_cam_enabled,
         )
         self.num_epochs = 100
         self.initial_lr = 1e-5

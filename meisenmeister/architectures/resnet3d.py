@@ -130,3 +130,6 @@ class ResNet3D18(BaseArchitecture):
         x = self.avgpool(x)
         x = x.flatten(1)
         return self.fc(x)
+
+    def get_grad_cam_target_layer(self) -> nn.Module:
+        return self.layer4

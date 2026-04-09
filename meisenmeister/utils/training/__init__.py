@@ -21,6 +21,7 @@ from .evaluation import (
     run_final_validation_evaluation,
     save_final_validation_evaluation,
 )
+from .grad_cam import export_validation_grad_cam
 from .metrics import (
     aggregate_epoch_metrics,
     aggregate_validation_classification_metrics,
@@ -58,6 +59,7 @@ __all__ = [
     "create_grad_scaler",
     "create_empty_history",
     "ensure_portable_inference_metadata",
+    "export_validation_grad_cam",
     "format_metric",
     "is_amp_enabled",
     "load_resume_checkpoint",

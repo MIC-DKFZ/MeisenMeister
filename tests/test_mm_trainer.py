@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import blosc2
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
@@ -23,6 +24,7 @@ from meisenmeister.training.trainers.networks.nnunet_encoder import (
 from meisenmeister.utils.training import (
     build_final_validation_evaluation,
     compute_stratified_bootstrap_interval,
+    run_final_validation_evaluation,
     save_da_preview,
 )
 
@@ -56,6 +58,23 @@ class _TinyNet(BaseArchitecture):
 
     def forward(self, x):
         return self.fc(x.flatten(1))
+
+
+class _TinyGradCamNet(BaseArchitecture):
+    def __init__(self) -> None:
+        super().__init__(in_channels=1, num_classes=2)
+        self.conv = nn.Conv3d(1, 4, kernel_size=3, padding=1)
+        self.relu = nn.ReLU()
+        self.pool = nn.AdaptiveAvgPool3d((1, 1, 1))
+        self.fc = nn.Linear(4, 2)
+
+    def forward(self, x):
+        x = self.relu(self.conv(x))
+        x = self.pool(x).flatten(1)
+        return self.fc(x)
+
+    def get_grad_cam_target_layer(self) -> nn.Module:
+        return self.conv
 
 
 class MMTrainerTests(unittest.TestCase):
@@ -386,6 +405,42 @@ class MMTrainerTests(unittest.TestCase):
         self.assertEqual(metrics["roi_names"], ["left", "left"])
         for parameter in trainer.get_architecture().parameters():
             self.assertIsNone(parameter.grad)
+
+    def test_base_architecture_grad_cam_target_layer_raises_by_default(self) -> None:
+        model = _TinyNet()
+
+        with self.assertRaisesRegex(NotImplementedError, "Grad-CAM is not available"):
+            model.get_grad_cam_target_layer()
+
+    def test_run_final_validation_evaluation_writes_grad_cam_outputs(self) -> None:
+        trainer = self._make_trainer(num_epochs=0)
+        trainer._architecture = _TinyGradCamNet().to(trainer.device)
+        output_path = trainer.fold_dir / "eval_last.json"
+        grad_cam_dir = trainer.fold_dir / "grad_cam_last"
+
+        payload = run_final_validation_evaluation(
+            trainer,
+            output_path=output_path,
+            log_path=trainer.log_path,
+            grad_cam_output_dir=grad_cam_dir,
+            grad_cam_checkpoint_kind="last",
+        )
+
+        self.assertTrue(output_path.is_file())
+        self.assertEqual(payload["summary"]["num_samples"], 2)
+        self.assertTrue((grad_cam_dir / "metadata.json").is_file())
+        self.assertTrue((grad_cam_dir / "case_000_left.b2nd").is_file())
+        metadata = json.loads(
+            (grad_cam_dir / "metadata.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(metadata["checkpoint_kind"], "last")
+        self.assertEqual(metadata["target_policy"], "predicted_class")
+        heatmap = blosc2.open(
+            urlpath=str(grad_cam_dir / "case_000_left.b2nd"), mode="r"
+        )
+        self.assertEqual(tuple(heatmap.shape), (2, 2, 2))
+        self.assertGreaterEqual(float(heatmap[:].min()), 0.0)
+        self.assertLessEqual(float(heatmap[:].max()), 1.0)
 
     def test_fit_creates_artifacts_and_logs_overwrite_warning(self) -> None:
         trainer = self._make_trainer()

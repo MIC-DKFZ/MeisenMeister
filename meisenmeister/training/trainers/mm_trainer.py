@@ -81,6 +81,7 @@ class mmTrainer(BaseTrainer):
         weights_path: Path | None = None,
         experiment_postfix: str | None = None,
         compile_enabled: bool = True,
+        grad_cam_enabled: bool = False,
     ) -> None:
         super().__init__(dataset_id, fold, dataset_dir, preprocessed_dataset_dir)
         self.results_dir = results_dir
@@ -103,6 +104,7 @@ class mmTrainer(BaseTrainer):
             self.device,
             enabled=compile_enabled,
         )
+        self.grad_cam_enabled = grad_cam_enabled
         self.compile_applied = False
         self.split_sample_ids = get_fold_sample_ids(preprocessed_dataset_dir, fold)
         experiment_paths = build_experiment_paths(
@@ -119,6 +121,9 @@ class mmTrainer(BaseTrainer):
         self.last_checkpoint_path = experiment_paths["last_checkpoint_path"]
         self.best_checkpoint_path = experiment_paths["best_checkpoint_path"]
         self.eval_last_path = experiment_paths["eval_last_path"]
+        self.eval_best_path = experiment_paths["eval_best_path"]
+        self.grad_cam_last_dir = experiment_paths["grad_cam_last_dir"]
+        self.grad_cam_best_dir = experiment_paths["grad_cam_best_dir"]
         self.plot_path = experiment_paths["plot_path"]
         self._train_dataset = None
         self._val_dataset = None
@@ -269,6 +274,10 @@ class mmTrainer(BaseTrainer):
                 confidence_level=self.FINAL_EVAL_CONFIDENCE_LEVEL,
                 seed=self.FINAL_EVAL_BOOTSTRAP_SEED,
                 log_fn=log_message,
+                grad_cam_output_dir=(
+                    self.grad_cam_last_dir if self.grad_cam_enabled else None
+                ),
+                grad_cam_checkpoint_kind="last",
             )
             log_message("DONE", self.log_path)
             return
@@ -440,8 +449,21 @@ class mmTrainer(BaseTrainer):
             confidence_level=self.FINAL_EVAL_CONFIDENCE_LEVEL,
             seed=self.FINAL_EVAL_BOOTSTRAP_SEED,
             log_fn=log_message,
+            grad_cam_output_dir=(
+                self.grad_cam_last_dir if self.grad_cam_enabled else None
+            ),
+            grad_cam_checkpoint_kind="last",
         )
         log_message("DONE", self.log_path)
+
+    def ensure_grad_cam_available(self) -> None:
+        architecture = unwrap_model(self.get_architecture())
+        try:
+            target_layer = architecture.get_grad_cam_target_layer()
+        except NotImplementedError as error:
+            raise ValueError(str(error)) from error
+        if not isinstance(target_layer, nn.Module):
+            raise TypeError("Grad-CAM target layer must be a torch.nn.Module instance")
 
     def get_architecture(self):
         if self._architecture is None:

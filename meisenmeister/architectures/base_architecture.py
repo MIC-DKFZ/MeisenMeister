@@ -17,6 +17,11 @@ class BaseArchitecture(nn.Module, ABC):
     def forward(self, x):
         """Run a forward pass."""
 
+    def get_grad_cam_target_layer(self) -> nn.Module:
+        raise NotImplementedError(
+            f"Grad-CAM is not available for architecture '{self.__class__.__name__}'"
+        )
+
     def load_initial_weights(
         self,
         *,

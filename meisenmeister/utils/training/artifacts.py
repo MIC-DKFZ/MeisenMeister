@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import logging
 import math
 import shutil
 import sys
 from pathlib import Path
 
+import blosc2
 import matplotlib
 import numpy as np
 
@@ -44,6 +46,8 @@ def build_experiment_paths(
         "best_checkpoint_path": fold_dir / "model_best.pt",
         "eval_last_path": fold_dir / "eval_last.json",
         "eval_best_path": fold_dir / "eval_best.json",
+        "grad_cam_last_dir": fold_dir / "grad_cam_last",
+        "grad_cam_best_dir": fold_dir / "grad_cam_best",
         "plot_path": fold_dir / "training_curves.png",
         "da_preview_path": fold_dir / "da_preview.png",
     }
@@ -297,3 +301,78 @@ def _extract_mid_slices(
     coronal = channel[:, height_mid, :]
     sagittal = channel[:, :, width_mid]
     return axial, coronal, sagittal
+
+
+def save_grad_cam_outputs(
+    grad_cam_results: list[dict],
+    output_dir: Path,
+    *,
+    run_metadata: dict,
+) -> Path:
+    initialize_grad_cam_output_dir(output_dir)
+    metadata_predictions: dict[str, dict] = {}
+
+    for result in grad_cam_results:
+        metadata_predictions[str(result["sample_id"])] = save_grad_cam_sample(
+            result,
+            output_dir,
+        )
+
+    return write_grad_cam_metadata(
+        output_dir,
+        run_metadata=run_metadata,
+        predictions=metadata_predictions,
+    )
+
+
+def initialize_grad_cam_output_dir(output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for stale_path in output_dir.glob("*.b2nd"):
+        stale_path.unlink()
+    metadata_path = output_dir / "metadata.json"
+    if metadata_path.exists():
+        metadata_path.unlink()
+
+
+def save_grad_cam_sample(result: dict, output_dir: Path) -> dict:
+    sample_id = str(result["sample_id"])
+    mask_path = output_dir / f"{sample_id}.b2nd"
+    heatmap = np.asarray(result["heatmap"], dtype=np.float32)
+    blosc2.asarray(
+        heatmap,
+        urlpath=str(mask_path),
+        mode="w",
+        chunks=heatmap.shape,
+    )
+    return {
+        "sample_id": sample_id,
+        "case_id": str(result["case_id"]),
+        "roi_name": str(result["roi_name"]),
+        "label": int(result["label"]),
+        "prediction": int(result["prediction"]),
+        "target_class": int(result["target_class"]),
+        "probabilities": [float(value) for value in result["probabilities"]],
+        "input_shape": [int(value) for value in result["input_shape"]],
+        "mask_path": str(mask_path),
+    }
+
+
+def write_grad_cam_metadata(
+    output_dir: Path,
+    *,
+    run_metadata: dict,
+    predictions: dict[str, dict],
+) -> Path:
+    metadata_path = output_dir / "metadata.json"
+    metadata_path.write_text(
+        json.dumps(
+            {
+                **run_metadata,
+                "num_samples": len(predictions),
+                "predictions": predictions,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return metadata_path

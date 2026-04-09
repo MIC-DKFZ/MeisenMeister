@@ -192,6 +192,11 @@ def mm_train() -> None:
         action="store_true",
         help="Disable torch.compile for training.",
     )
+    parser.add_argument(
+        "--grad-cam",
+        action="store_true",
+        help="Export Grad-CAM++ masks during final validation only.",
+    )
     args = parser.parse_args()
     train(
         args.d,
@@ -203,6 +208,7 @@ def mm_train() -> None:
         experiment_postfix=args.postfix,
         val=args.val,
         compile_enabled=not args.disable_compile,
+        grad_cam_enabled=args.grad_cam,
     )
 
 

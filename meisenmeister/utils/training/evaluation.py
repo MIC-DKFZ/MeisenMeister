@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from sklearn.metrics import balanced_accuracy_score, roc_auc_score
 
+from .grad_cam import export_validation_grad_cam
 from .metrics import (
     compute_classification_metrics,
     compute_stratified_bootstrap_interval,
@@ -168,6 +169,7 @@ def build_final_validation_evaluation(
 
 
 def save_final_validation_evaluation(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
@@ -180,6 +182,8 @@ def run_final_validation_evaluation(
     confidence_level: float = 0.95,
     seed: int = 0,
     log_fn=None,
+    grad_cam_output_dir: Path | None = None,
+    grad_cam_checkpoint_kind: str | None = None,
 ) -> dict:
     val_metrics = []
     trainer.get_architecture().eval()
@@ -195,4 +199,19 @@ def run_final_validation_evaluation(
     save_final_validation_evaluation(output_path, payload)
     if log_fn is not None:
         log_fn(f"Saved final validation evaluation to {output_path}", log_path)
+    if grad_cam_output_dir is not None:
+        metadata_path = export_validation_grad_cam(
+            trainer,
+            output_dir=grad_cam_output_dir,
+            checkpoint_kind=(
+                "last" if grad_cam_checkpoint_kind is None else grad_cam_checkpoint_kind
+            ),
+            log_fn=log_fn,
+            log_path=log_path,
+        )
+        if log_fn is not None:
+            log_fn(
+                f"Saved Grad-CAM outputs to {grad_cam_output_dir} ({metadata_path.name})",
+                log_path,
+            )
     return payload

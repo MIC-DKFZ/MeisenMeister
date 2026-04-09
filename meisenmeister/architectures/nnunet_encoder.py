@@ -88,6 +88,9 @@ class ResidualEncoderClsNetwork(BaseArchitecture):
         encoded = self.final_layer_dropout(encoded)
         return self.cls_head(encoded)
 
+    def get_grad_cam_target_layer(self) -> nn.Module:
+        return self.encoder.stages[-2]
+
     @staticmethod
     def initialize(module) -> None:
         InitWeights_He(1e-2)(module)

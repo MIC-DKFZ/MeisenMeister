@@ -14,6 +14,7 @@ Today it:
 - writes a timestamped training log to both stdout and file
 - saves both last and best checkpoints
 - writes a training-curve PNG after each epoch
+- can optionally export Grad-CAM++ masks during final validation when `--grad-cam` is used
 
 ## Experiment Folder Layout
 
@@ -40,6 +41,11 @@ Each fold directory contains:
 - `model_last.pt`
 - `model_best.pt`
 - `training_curves.png`
+
+If `--grad-cam` is enabled, final validation also writes:
+
+- `grad_cam_last/` after the standard final validation pass
+- `grad_cam_best/` when using `mm_train --val best --grad-cam`
 
 ### `train.log`
 
