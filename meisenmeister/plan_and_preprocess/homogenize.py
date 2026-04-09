@@ -25,12 +25,26 @@ def _resample_to_reference(
     return resampler.Execute(moving_image)
 
 
+def _matches_reference_geometry(
+    moving_image: sitk.Image,
+    reference_image: sitk.Image,
+) -> bool:
+    return (
+        moving_image.GetSize() == reference_image.GetSize()
+        and moving_image.GetSpacing() == reference_image.GetSpacing()
+        and moving_image.GetOrigin() == reference_image.GetOrigin()
+        and moving_image.GetDirection() == reference_image.GetDirection()
+    )
+
+
 def _homogenize_single_image(
     moving_path: Path,
     reference_path: Path,
 ) -> None:
     reference_image = sitk.ReadImage(str(reference_path))
     moving_image = sitk.ReadImage(str(moving_path))
+    if _matches_reference_geometry(moving_image, reference_image):
+        return
     resampled_image = _resample_to_reference(moving_image, reference_image)
     sitk.WriteImage(resampled_image, str(moving_path))
 
