@@ -4,7 +4,9 @@ from .artifacts import (
     format_metric,
     log_message,
     prepare_output_dir,
+    save_confusion_matrix_plot,
     save_da_preview,
+    save_macro_auc_curve_plot,
     save_training_curves,
 )
 from .checkpoints import (
@@ -72,9 +74,11 @@ __all__ = [
     "restore_checkpoint_payload",
     "resolve_num_workers",
     "run_final_validation_evaluation",
+    "save_confusion_matrix_plot",
     "save_da_preview",
     "save_checkpoint",
     "save_final_validation_evaluation",
+    "save_macro_auc_curve_plot",
     "save_training_curves",
     "should_update_best",
     "unwrap_model",

@@ -10,6 +10,8 @@ from unittest.mock import patch
 
 import blosc2
 import torch
+from torch import nn
+from torch.utils.data import DataLoader, Dataset
 from meisenmeister.architectures import BaseArchitecture
 from meisenmeister.data_augmentations import Compose3D, RandomShiftWithinMargin3D
 from meisenmeister.training.trainers.mm_trainer import mmTrainer
@@ -24,8 +26,6 @@ from meisenmeister.utils.training import (
     run_final_validation_evaluation,
     save_da_preview,
 )
-from torch import nn
-from torch.utils.data import DataLoader, Dataset
 
 
 class _TinyROIDataset(Dataset):

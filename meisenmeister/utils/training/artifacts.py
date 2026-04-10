@@ -10,6 +10,7 @@ from pathlib import Path
 import blosc2
 import matplotlib
 import numpy as np
+from sklearn.metrics import auc, roc_curve
 
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt
@@ -222,6 +223,116 @@ def save_training_curves(history: dict[str, list[float]], plot_path: Path) -> No
 
     figure.tight_layout()
     figure.savefig(plot_path)
+    plt.close(figure)
+
+
+def save_confusion_matrix_plot(
+    confusion: np.ndarray,
+    plot_path: Path,
+    *,
+    class_labels: list[str] | None = None,
+) -> None:
+    confusion_array = np.asarray(confusion, dtype=np.int64)
+    if confusion_array.shape != (3, 3):
+        raise ValueError(
+            "Confusion matrix plot expects a 3x3 matrix for 3-class evaluation"
+        )
+
+    labels = class_labels or ["0", "1", "2"]
+    if len(labels) != 3:
+        raise ValueError("Confusion matrix plot expects exactly three class labels")
+
+    figure, axis = plt.subplots(figsize=(6, 5))
+    image = axis.imshow(confusion_array, cmap="Blues")
+    figure.colorbar(image, ax=axis, fraction=0.046, pad=0.04)
+
+    axis.set_xticks(range(3), labels=labels)
+    axis.set_yticks(range(3), labels=labels)
+    axis.set_xlabel("Predicted label")
+    axis.set_ylabel("True label")
+    axis.set_title("Confusion Matrix")
+
+    max_value = int(confusion_array.max()) if confusion_array.size else 0
+    threshold = max_value / 2.0 if max_value else 0.0
+    for row_index in range(3):
+        for column_index in range(3):
+            value = int(confusion_array[row_index, column_index])
+            axis.text(
+                column_index,
+                row_index,
+                str(value),
+                ha="center",
+                va="center",
+                color="white" if value > threshold else "black",
+            )
+
+    figure.tight_layout()
+    figure.savefig(plot_path, dpi=120, bbox_inches="tight")
+    plt.close(figure)
+
+
+def save_macro_auc_curve_plot(
+    labels: np.ndarray,
+    probabilities: np.ndarray,
+    plot_path: Path,
+    *,
+    class_labels: list[str] | None = None,
+) -> None:
+    labels_array = np.asarray(labels, dtype=np.int64)
+    probabilities_array = np.asarray(probabilities, dtype=np.float64)
+    if probabilities_array.ndim != 2 or probabilities_array.shape[1] != 3:
+        raise ValueError("Macro AUC plot expects probabilities with shape (N, 3)")
+
+    labels = class_labels or ["0", "1", "2"]
+    if len(labels) != 3:
+        raise ValueError("Macro AUC plot expects exactly three class labels")
+
+    figure, axis = plt.subplots(figsize=(7, 6))
+    mean_fpr = np.linspace(0.0, 1.0, 256)
+    macro_tpr = np.zeros_like(mean_fpr)
+    class_aucs: list[float] = []
+
+    for class_index, class_label in enumerate(labels):
+        y_true = (labels_array == class_index).astype(np.int64)
+        fpr, tpr, _ = roc_curve(y_true, probabilities_array[:, class_index])
+        class_auc = float(auc(fpr, tpr))
+        class_aucs.append(class_auc)
+        macro_tpr += np.interp(mean_fpr, fpr, tpr)
+        axis.plot(
+            fpr,
+            tpr,
+            linewidth=1.5,
+            label=f"class {class_label} (AUC={class_auc:.4f})",
+        )
+
+    macro_tpr /= 3.0
+    macro_auc = float(auc(mean_fpr, macro_tpr))
+    axis.plot(
+        mean_fpr,
+        macro_tpr,
+        linewidth=2.5,
+        linestyle="--",
+        color="black",
+        label=f"macro-average (AUC={macro_auc:.4f})",
+    )
+    axis.plot(
+        [0.0, 1.0],
+        [0.0, 1.0],
+        linestyle=":",
+        color="#666666",
+        linewidth=1.0,
+        label="chance",
+    )
+    axis.set_xlim(0.0, 1.0)
+    axis.set_ylim(0.0, 1.05)
+    axis.set_xlabel("False Positive Rate")
+    axis.set_ylabel("True Positive Rate")
+    axis.set_title("Macro AUC ROC Curve")
+    axis.grid(True, alpha=0.3)
+    axis.legend(loc="lower right")
+
+    figure.tight_layout()
+    figure.savefig(plot_path, dpi=120, bbox_inches="tight")
     plt.close(figure)
 
 

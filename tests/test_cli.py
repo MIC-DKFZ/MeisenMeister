@@ -300,6 +300,32 @@ class CliTests(unittest.TestCase):
             compile_model=True,
         )
 
+    def test_mm_evaluate_predictions_passes_options(self) -> None:
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "mm_evaluate_predictions",
+                    "-t",
+                    "/tmp/targets.json",
+                    "-p",
+                    "/tmp/predictions.json",
+                    "-o",
+                    "/tmp/evaluation.json",
+                ],
+            ),
+            patch(
+                "meisenmeister.cli.evaluate_predictions"
+            ) as mock_evaluate_predictions,
+        ):
+            cli.mm_evaluate_predictions()
+
+        mock_evaluate_predictions.assert_called_once_with(
+            targets_path="/tmp/targets.json",
+            predictions_path="/tmp/predictions.json",
+            output_path="/tmp/evaluation.json",
+        )
+
     def test_mm_benchmark_train_passes_options(self) -> None:
         with (
             patch(

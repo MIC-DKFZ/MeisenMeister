@@ -33,6 +33,7 @@ mm_preview_da = "meisenmeister.cli:mm_preview_da"
 mm_benchmark_train = "meisenmeister.cli:mm_benchmark_train"
 mm_predict = "meisenmeister.cli:mm_predict"
 mm_predict_from_modelfolder = "meisenmeister.cli:mm_predict_from_modelfolder"
+mm_evaluate_predictions = "meisenmeister.cli:mm_evaluate_predictions"
 
 [tool.setuptools]
 include-package-data = true

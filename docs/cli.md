@@ -14,6 +14,7 @@ This page is the practical reference for the installed console commands.
 - `mm_train`
 - `mm_predict`
 - `mm_predict_from_modelfolder`
+- `mm_evaluate_predictions`
 
 ## Common Usage Pattern
 
@@ -198,6 +199,48 @@ mm_predict_from_modelfolder /shared/Dataset_001_Test/mmTrainer_ResNet3D18 -i /pa
 ```
 
 Training copies `dataset.json` and `mmPlans.json` into the experiment folder automatically so the folder can be shared for inference on another machine. The trainer decides which architecture is used.
+
+### `mm_evaluate_predictions`
+
+Evaluates a `predictions.json` file against a target JSON with `labelsTr.json` semantics.
+
+The command evaluates ROI-level predictions. It derives the target key as:
+
+- `<case_id>_<roi_name>`
+
+That means the target JSON should look like a flat mapping such as:
+
+```json
+{
+  "case_001_left": 0,
+  "case_001_right": 1,
+  "case_002_left": 2
+}
+```
+
+List-valued targets are also accepted and are resolved with `argmax`, matching the dataset loader behavior.
+
+Example:
+
+```bash
+mm_evaluate_predictions \
+  -t /path/to/labels_like_labelsTr.json \
+  -p /path/to/predictions.json
+```
+
+Optional explicit output location:
+
+```bash
+mm_evaluate_predictions \
+  -t /path/to/labels_like_labelsTr.json \
+  -p /path/to/predictions.json \
+  -o /path/to/eval_dir
+```
+
+This command expects fixed 3-class probabilities in `predictions.json` and evaluates the averaged ROI probabilities already stored there. It prints a confusion matrix and summary metrics in the shell, writes `evaluation.json`, and also saves:
+
+- `confusion_matrix.png`
+- `macro_auc_curve.png`
 
 ## A Few Practical Notes
 
