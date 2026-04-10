@@ -95,13 +95,24 @@ class EvaluatePredictionsTests(unittest.TestCase):
             payload = json.loads((root / "evaluation.json").read_text(encoding="utf-8"))
             self.assertEqual(payload["summary"]["num_samples"], 6)
             self.assertIn("extended_summary", payload)
+            self.assertIn("challenge_metrics", payload)
             self.assertEqual(
                 payload["extended_summary"]["confusion_matrix"],
                 [[2, 0, 0], [0, 2, 0], [0, 0, 2]],
             )
             self.assertEqual(payload["predictions"]["case_001_left"]["prediction"], 0)
+            self.assertIsNotNone(payload["challenge_metrics"]["macro_auc"])
+            self.assertIsNotNone(
+                payload["challenge_metrics"]["macro_specificity_at_90_sensitivity"]
+            )
+            self.assertIsNotNone(
+                payload["challenge_metrics"]["macro_sensitivity_at_90_specificity"]
+            )
             self.assertIn("Confusion matrix", mock_stdout.getvalue())
             self.assertIn("macro_auc", mock_stdout.getvalue())
+            self.assertIn("specificity_at_90_sensitivity", mock_stdout.getvalue())
+            self.assertIn("sensitivity_at_90_specificity", mock_stdout.getvalue())
+            self.assertNotIn("rank_score", mock_stdout.getvalue())
 
     def test_evaluate_predictions_accepts_list_targets(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

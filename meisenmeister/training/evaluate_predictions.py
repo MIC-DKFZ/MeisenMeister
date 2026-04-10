@@ -6,8 +6,10 @@ from pathlib import Path
 import numpy as np
 from sklearn.metrics import (
     accuracy_score,
+    auc,
     confusion_matrix,
     precision_recall_fscore_support,
+    roc_curve,
 )
 
 from meisenmeister.utils import (
@@ -18,6 +20,7 @@ from meisenmeister.utils import (
 )
 
 _EXPECTED_NUM_CLASSES = 3
+_OPERATING_POINT_TARGET = 0.9
 
 
 def _normalize_label_value(label_value) -> int:
@@ -183,6 +186,70 @@ def _compute_extended_summary(labels: np.ndarray, predictions: np.ndarray) -> di
     }
 
 
+def _compute_operating_point_metrics(
+    labels: np.ndarray,
+    probabilities: np.ndarray,
+) -> dict:
+    per_class: dict[str, dict[str, float | bool | None]] = {}
+    auc_values: list[float] = []
+    specificity_at_target_values: list[float] = []
+    sensitivity_at_target_values: list[float] = []
+
+    for class_index in range(_EXPECTED_NUM_CLASSES):
+        binary_labels = (labels == class_index).astype(np.int64)
+        if np.unique(binary_labels).size < 2:
+            per_class[str(class_index)] = {
+                "defined": False,
+                "auc": None,
+                "specificity_at_90_sensitivity": None,
+                "sensitivity_at_90_specificity": None,
+            }
+            continue
+
+        fpr, tpr, _ = roc_curve(binary_labels, probabilities[:, class_index])
+        specificity = 1.0 - fpr
+        class_auc = float(auc(fpr, tpr))
+
+        valid_specificity = specificity[tpr >= _OPERATING_POINT_TARGET]
+        specificity_at_target = (
+            float(np.max(valid_specificity)) if valid_specificity.size else 0.0
+        )
+
+        valid_sensitivity = tpr[specificity >= _OPERATING_POINT_TARGET]
+        sensitivity_at_target = (
+            float(np.max(valid_sensitivity)) if valid_sensitivity.size else 0.0
+        )
+
+        per_class[str(class_index)] = {
+            "defined": True,
+            "auc": class_auc,
+            "specificity_at_90_sensitivity": specificity_at_target,
+            "sensitivity_at_90_specificity": sensitivity_at_target,
+        }
+        auc_values.append(class_auc)
+        specificity_at_target_values.append(specificity_at_target)
+        sensitivity_at_target_values.append(sensitivity_at_target)
+
+    macro_auc = float(np.mean(auc_values)) if auc_values else None
+    macro_specificity_at_90_sensitivity = (
+        float(np.mean(specificity_at_target_values))
+        if specificity_at_target_values
+        else None
+    )
+    macro_sensitivity_at_90_specificity = (
+        float(np.mean(sensitivity_at_target_values))
+        if sensitivity_at_target_values
+        else None
+    )
+
+    return {
+        "per_class": per_class,
+        "macro_auc": macro_auc,
+        "macro_specificity_at_90_sensitivity": macro_specificity_at_90_sensitivity,
+        "macro_sensitivity_at_90_specificity": macro_sensitivity_at_90_specificity,
+    }
+
+
 def _format_interval(interval: dict[str, float | int | bool | None]) -> str:
     if not bool(interval.get("defined")):
         return "undefined"
@@ -196,6 +263,7 @@ def _format_interval(interval: dict[str, float | int | bool | None]) -> str:
 def _print_report(payload: dict) -> None:
     summary = payload["summary"]
     extended = payload["extended_summary"]
+    challenge_metrics = payload["challenge_metrics"]
     confusion = extended["confusion_matrix"]
 
     print("Confusion matrix (rows=true, cols=pred):")
@@ -215,6 +283,21 @@ def _print_report(payload: dict) -> None:
     else:
         print(f"macro_auc: {float(macro_auc_value):.4f}")
     print(f"macro_auc_ci: {_format_interval(summary['macro_auc_ci'])}")
+    challenge_auc = challenge_metrics["macro_auc"]
+    if challenge_auc is None:
+        print("auc: undefined")
+    else:
+        print(f"auc: {challenge_auc:.4f}")
+    specificity_at_target = challenge_metrics["macro_specificity_at_90_sensitivity"]
+    if specificity_at_target is None:
+        print("specificity_at_90_sensitivity: undefined")
+    else:
+        print(f"specificity_at_90_sensitivity: {specificity_at_target:.4f}")
+    sensitivity_at_target = challenge_metrics["macro_sensitivity_at_90_specificity"]
+    if sensitivity_at_target is None:
+        print("sensitivity_at_90_specificity: undefined")
+    else:
+        print(f"sensitivity_at_90_specificity: {sensitivity_at_target:.4f}")
     print(f"macro_f1: {extended['macro_f1']:.4f}")
     print("per_class:")
     for class_index in range(_EXPECTED_NUM_CLASSES):
@@ -278,6 +361,10 @@ def evaluate_predictions(
         metrics["predictions"],
     )
     payload["extended_summary"] = extended_summary
+    payload["challenge_metrics"] = _compute_operating_point_metrics(
+        metrics["labels"],
+        metrics["probabilities"],
+    )
 
     evaluation_json_path, confusion_matrix_path, macro_auc_curve_path = (
         _resolve_output_paths(Path(predictions_path), output_path)
