@@ -3,7 +3,6 @@ from __future__ import annotations
 import unittest
 
 import torch
-
 from meisenmeister.architectures import (
     BaseArchitecture,
     ResidualEncoderClsNetwork,

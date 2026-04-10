@@ -9,7 +9,6 @@ from unittest.mock import patch
 
 import numpy as np
 import torch
-
 from meisenmeister.utils.file_utils import discover_case_files
 
 predict_module = importlib.import_module("meisenmeister.training.predict")

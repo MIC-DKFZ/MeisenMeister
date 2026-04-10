@@ -9,7 +9,6 @@ from unittest.mock import patch
 import blosc2
 import numpy as np
 import torch
-
 from meisenmeister.data_augmentations import (
     Compose3D,
     Contrast3D,
