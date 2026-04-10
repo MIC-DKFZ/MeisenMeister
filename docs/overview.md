@@ -54,6 +54,10 @@ Each run writes into:
 
 `<mm_results>/<dataset_name>/<Trainer>_<Architecture>[/_<postfix>]/fold_<n>/`
 
+All-data training via `mm_train -f all` writes into:
+
+`<mm_results>/<dataset_name>/<Trainer>_<Architecture>[/_<postfix>]/fold_all/`
+
 Inside that folder you get:
 
 - `train.log`

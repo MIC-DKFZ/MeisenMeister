@@ -18,7 +18,7 @@ class _MockTrainer:
     def __init__(
         self,
         dataset_id: str,
-        fold: int,
+        fold: int | str,
         dataset_dir: Path,
         preprocessed_dataset_dir: Path,
         results_dir: Path,
@@ -65,6 +65,51 @@ class _MockTrainer:
 
 
 class TrainEntrypointTests(unittest.TestCase):
+    def test_train_accepts_all_fold_and_runs_selected_trainer(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            dataset_dir = root / "Dataset_001_Test"
+            preprocessed_root = root / "preprocessed"
+            dataset_dir.mkdir()
+            preprocessed_root.mkdir()
+
+            with (
+                patch(
+                    "meisenmeister.training.train.verify_required_global_paths_set",
+                    return_value={
+                        "mm_preprocessed": preprocessed_root,
+                        "mm_results": root / "results",
+                    },
+                ),
+                patch(
+                    "meisenmeister.training.train.find_dataset_dir",
+                    return_value=preprocessed_root / dataset_dir.name,
+                ),
+                patch(
+                    "meisenmeister.training.train.get_fold_sample_ids",
+                    return_value={
+                        "train": ["case_001_left", "case_001_right"],
+                        "val": ["case_001_left", "case_001_right"],
+                    },
+                ) as mock_get_fold_sample_ids,
+                patch(
+                    "meisenmeister.training.train.get_trainer_class",
+                    return_value=_MockTrainer,
+                ),
+            ):
+                train_module.train(
+                    1,
+                    fold="all",
+                    trainer_name="mmTrainer_Debug",
+                )
+
+        mock_get_fold_sample_ids.assert_called_once_with(
+            preprocessed_root / dataset_dir.name,
+            "all",
+        )
+        self.assertEqual(_MockTrainer.last_instance.fold, "all")
+        self.assertTrue(_MockTrainer.last_instance.fit_called)
+
     def test_train_resolves_and_runs_selected_trainer(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -190,6 +235,55 @@ class TrainEntrypointTests(unittest.TestCase):
         self.assertIn(
             "eval_last.json", str(mock_run_eval.call_args.kwargs["output_path"])
         )
+
+    def test_train_val_last_uses_fold_all_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            dataset_dir = root / "Dataset_001_Test"
+            preprocessed_root = root / "preprocessed"
+            dataset_dir.mkdir()
+            preprocessed_root.mkdir()
+
+            with (
+                patch(
+                    "meisenmeister.training.train.verify_required_global_paths_set",
+                    return_value={
+                        "mm_preprocessed": preprocessed_root,
+                        "mm_results": root / "results",
+                    },
+                ),
+                patch(
+                    "meisenmeister.training.train.find_dataset_dir",
+                    return_value=preprocessed_root / dataset_dir.name,
+                ),
+                patch(
+                    "meisenmeister.training.train.get_fold_sample_ids",
+                    return_value={
+                        "train": ["case_001_left", "case_001_right"],
+                        "val": ["case_001_left", "case_001_right"],
+                    },
+                ),
+                patch(
+                    "meisenmeister.training.train.get_trainer_class",
+                    return_value=_MockTrainer,
+                ),
+                patch(
+                    "meisenmeister.training.train.torch.load",
+                    return_value={"model_state_dict": {"weight": 1}},
+                ) as mock_torch_load,
+                patch(
+                    "meisenmeister.training.train.run_final_validation_evaluation"
+                ) as mock_run_eval,
+            ):
+                train_module.train(
+                    1,
+                    fold="all",
+                    trainer_name="mmTrainer_Debug",
+                    val="last",
+                )
+
+        self.assertIn("fold_all", str(mock_torch_load.call_args.args[0]))
+        self.assertIn("fold_all", str(mock_run_eval.call_args.kwargs["output_path"]))
 
     def test_train_val_best_loads_best_checkpoint_and_runs_evaluation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

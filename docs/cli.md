@@ -124,6 +124,12 @@ Basic example:
 mm_train -d 1 -f 0
 ```
 
+Train on all samples and validate on that same full dataset:
+
+```bash
+mm_train -d 1 -f all
+```
+
 Select a trainer:
 
 ```bash
@@ -157,6 +163,7 @@ mm_train -d 1 -f 0 -c --postfix finetuningNNSSL
 Important rule:
 
 - `-c` and `-w` cannot be used together
+- `-f all` uses the full dataset for both training and validation and writes outputs under `fold_all/`
 
 That is a deliberate validation rule. Resume means “load experiment state from checkpoint.” Weights means “start a new run from an external initialization.” The code refuses to guess which one you meant.
 

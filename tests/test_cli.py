@@ -9,6 +9,26 @@ from meisenmeister import cli
 
 
 class CliTests(unittest.TestCase):
+    def test_mm_train_accepts_all_fold(self) -> None:
+        with (
+            patch("sys.argv", ["mm_train", "-d", "1", "-f", "all"]),
+            patch("meisenmeister.cli.train") as mock_train,
+        ):
+            cli.mm_train()
+
+        mock_train.assert_called_once_with(
+            1,
+            fold="all",
+            trainer_name="mmTrainer",
+            num_workers=None,
+            continue_training=False,
+            weights_path=None,
+            experiment_postfix=None,
+            val=None,
+            compile_enabled=True,
+            grad_cam_enabled=False,
+        )
+
     def test_mm_train_uses_default_trainer(self) -> None:
         with (
             patch("sys.argv", ["mm_train", "-d", "1", "-f", "0"]),

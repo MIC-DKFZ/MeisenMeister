@@ -78,6 +78,24 @@ class SplitTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Fold 5 does not exist"):
                 get_fold_sample_ids(preprocessed_dataset_dir, 5)
 
+    def test_get_fold_sample_ids_all_uses_full_dataset_without_splits_file(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            preprocessed_dataset_dir = _build_preprocessed_dataset(
+                Path(temp_dir), num_cases=5
+            )
+
+            split = get_fold_sample_ids(preprocessed_dataset_dir, "all")
+
+        expected_sample_ids = [
+            f"case_{case_index:03d}_{roi_name}"
+            for case_index in range(1, 6)
+            for roi_name in ("left", "right")
+        ]
+        self.assertEqual(split["train"], expected_sample_ids)
+        self.assertEqual(split["val"], expected_sample_ids)
+
     def test_dataset_filter_keeps_only_selected_sample_ids(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             preprocessed_dataset_dir = _build_preprocessed_dataset(

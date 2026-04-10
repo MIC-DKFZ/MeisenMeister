@@ -87,8 +87,19 @@ def load_splits(preprocessed_dataset_dir: Path) -> list[dict[str, list[str]]]:
 
 def get_fold_sample_ids(
     preprocessed_dataset_dir: Path,
-    fold: int,
+    fold: int | str,
 ) -> dict[str, list[str]]:
+    if fold == "all":
+        dataset = MeisenmeisterROIDataset(preprocessed_dataset_dir)
+        sample_ids = sorted(sample["sample_id"] for sample in dataset.samples)
+        return {
+            "train": sample_ids,
+            "val": sample_ids,
+        }
+
+    if not isinstance(fold, int):
+        raise ValueError(f"Fold must be an integer or 'all', got {fold!r}")
+
     splits = load_splits(preprocessed_dataset_dir)
     if fold < 0 or fold >= len(splits):
         raise ValueError(

@@ -66,7 +66,7 @@ class mmTrainer(BaseTrainer):
     def __init__(
         self,
         dataset_id: str,
-        fold: int,
+        fold: int | str,
         dataset_dir: Path,
         preprocessed_dataset_dir: Path,
         results_dir: Path,

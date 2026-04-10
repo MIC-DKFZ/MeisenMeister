@@ -31,7 +31,7 @@ def build_experiment_paths(
     trainer_name: str,
     architecture_name: str,
     experiment_postfix: str | None,
-    fold: int,
+    fold: int | str,
 ) -> dict[str, Path]:
     experiment_name = f"{trainer_name}_{architecture_name}"
     if experiment_postfix:

@@ -9,6 +9,7 @@ The default trainer is `mmTrainer`.
 Today it:
 
 - builds fold-specific training and validation datasets from the preprocessed ROI data
+- also supports `mm_train -f all`, which uses the full dataset for both training and validation
 - instantiates the selected architecture, currently `ResNet3D18` by default
 - trains with `CrossEntropyLoss`
 - writes a timestamped training log to both stdout and file
@@ -24,6 +25,10 @@ The path shape is:
 
 `<MM_RESULTS>/<dataset_name>/<Trainer>_<Architecture>/fold_<n>/`
 
+For all-data training, the path uses:
+
+`<MM_RESULTS>/<dataset_name>/<Trainer>_<Architecture>/fold_all/`
+
 If a postfix is supplied, it is appended to the experiment name:
 
 `<MM_RESULTS>/<dataset_name>/<Trainer>_<Architecture>_<postfix>/fold_<n>/`
@@ -31,6 +36,7 @@ If a postfix is supplied, it is appended to the experiment name:
 Examples:
 
 - `.../Dataset_001_OdeliaTest/mmTrainer_ResNet3D18/fold_0/`
+- `.../Dataset_001_OdeliaTest/mmTrainer_ResNet3D18/fold_all/`
 - `.../Dataset_001_OdeliaTest/mmTrainer_ResNet3D18_finetuningNNSSL/fold_0/`
 
 ## Files Written Per Fold
@@ -94,6 +100,12 @@ Resume is explicit:
 
 ```bash
 mm_train -d 1 -f 0 -c
+```
+
+The same applies to all-data training:
+
+```bash
+mm_train -d 1 -f all -c
 ```
 
 If the experiment was created with a postfix, the same postfix must be provided on resume:

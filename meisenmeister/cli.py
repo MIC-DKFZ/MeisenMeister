@@ -22,6 +22,17 @@ from meisenmeister.utils import (
 )
 
 
+def _parse_train_fold(value: str) -> int | str:
+    if value == "all":
+        return value
+    try:
+        return int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            f"Invalid fold {value!r}. Use a non-negative integer or 'all'."
+        ) from error
+
+
 def mm_extract_dataset_fingerprint() -> None:
     parser = argparse.ArgumentParser(
         prog="mm_extract_dataset_fingerprint",
@@ -151,9 +162,9 @@ def mm_train() -> None:
     parser.add_argument(
         "-f",
         "--fold",
-        type=int,
+        type=_parse_train_fold,
         required=True,
-        help="Fold index from splits.json.",
+        help="Fold index from splits.json, or 'all' to use all samples for both train and val.",
     )
     parser.add_argument(
         "--trainer",

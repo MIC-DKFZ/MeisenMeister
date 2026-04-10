@@ -16,7 +16,7 @@ from meisenmeister.utils import (
 
 def train(
     d: int,
-    fold: int,
+    fold: int | str,
     trainer_name: str = "mmTrainer",
     num_workers: int | None = None,
     continue_training: bool = False,
@@ -28,8 +28,11 @@ def train(
 ) -> None:
     if not 0 <= d <= 999:
         raise ValueError(f"Dataset id must be between 0 and 999, got {d}")
-    if fold < 0:
-        raise ValueError(f"Fold must be non-negative, got {fold}")
+    if isinstance(fold, int):
+        if fold < 0:
+            raise ValueError(f"Fold must be non-negative, got {fold}")
+    elif fold != "all":
+        raise ValueError(f"Fold must be a non-negative integer or 'all', got {fold!r}")
     if continue_training and weights_path is not None:
         raise ValueError("Cannot use --continue-training and --weights together")
     if val is not None and val not in {"last", "best"}:
