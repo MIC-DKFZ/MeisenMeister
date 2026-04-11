@@ -64,7 +64,7 @@ mm_predict -d 1 -i /path/to/images -o /path/to/preds -f 0 1 2 3 4
 | `mm_extract_dataset_fingerprint` | Compute dataset fingerprint statistics used by planning. |
 | `mm_create_breast_segmentations` | Create breast segmentations in `masksTr`. |
 | `mm_homogenize` | Resample channels into `_0000` space and overwrite raw NIfTI files. |
-| `mm_plan_experment` | Build `mmPlans.json` from fingerprint data. |
+| `mm_plan_experiment` | Build `mmPlans.json` from fingerprint data. |
 | `mm_preprocess` | Generate preprocessed ROI data from `mmPlans.json`. |
 | `mm_plan_and_preprocess` | Run planning and preprocessing in one step. |
 | `mm_create_5fold` | Create case-aware leakage-safe `splits.json`. |

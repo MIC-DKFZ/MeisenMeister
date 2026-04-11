@@ -7,7 +7,7 @@ This page is the practical reference for the installed console commands.
 - `mm_extract_dataset_fingerprint`
 - `mm_create_breast_segmentations`
 - `mm_homogenize`
-- `mm_plan_experment`
+- `mm_plan_experiment`
 - `mm_preprocess`
 - `mm_plan_and_preprocess`
 - `mm_create_5fold`
@@ -69,14 +69,14 @@ mm_homogenize -d 1
 
 This command is intentionally guarded by a confirmation prompt because it modifies raw data in place.
 
-### `mm_plan_experment`
+### `mm_plan_experiment`
 
 Builds `mmPlans.json` from `dataset_fingerprint.json`.
 
 Example:
 
 ```bash
-mm_plan_experment -d 1
+mm_plan_experiment -d 1
 ```
 
 The command name is spelled exactly as shown because that is the current installed entrypoint.

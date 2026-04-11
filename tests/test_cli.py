@@ -9,6 +9,15 @@ from meisenmeister import cli
 
 
 class CliTests(unittest.TestCase):
+    def test_mm_plan_experiment_passes_dataset_id(self) -> None:
+        with (
+            patch("sys.argv", ["mm_plan_experiment", "-d", "1"]),
+            patch("meisenmeister.cli.plan_experiment") as mock_plan_experiment,
+        ):
+            cli.mm_plan_experiment()
+
+        mock_plan_experiment.assert_called_once_with(1)
+
     def test_mm_train_accepts_all_fold(self) -> None:
         with (
             patch("sys.argv", ["mm_train", "-d", "1", "-f", "all"]),

@@ -24,7 +24,7 @@ For a new dataset, the usual sequence is:
 
 1. `mm_create_breast_segmentations -d <id>` if segmentations do not exist yet.
 2. `mm_extract_dataset_fingerprint -d <id>`
-3. `mm_plan_experment -d <id>` or `mm_plan_and_preprocess -d <id>`
+3. `mm_plan_experiment -d <id>` or `mm_plan_and_preprocess -d <id>`
 4. `mm_preprocess -d <id>` if planning and preprocessing are done separately
 5. `mm_create_5fold -d <id>`
 6. `mm_train -d <id> -f <fold>`
@@ -38,7 +38,7 @@ The repository installs these console commands:
 - `mm_extract_dataset_fingerprint`
 - `mm_create_breast_segmentations`
 - `mm_homogenize`
-- `mm_plan_experment`
+- `mm_plan_experiment`
 - `mm_preprocess`
 - `mm_plan_and_preprocess`
 - `mm_create_5fold`

@@ -34,7 +34,7 @@ That fingerprint is what the planning step uses.
 
 ## What Planning Produces
 
-`mm_plan_experment` writes:
+`mm_plan_experiment` writes:
 
 - `mmPlans.json`
 

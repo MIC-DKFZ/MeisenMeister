@@ -10,7 +10,7 @@ import SimpleITK as sitk
 def load_mm_plans(plans_path: Path) -> dict:
     if not plans_path.is_file():
         raise FileNotFoundError(
-            f"Missing mmPlans.json in {plans_path.parent}. Run mm_plan_experment first."
+            f"Missing mmPlans.json in {plans_path.parent}. Run mm_plan_experiment first."
         )
 
     with plans_path.open("r", encoding="utf-8") as file:

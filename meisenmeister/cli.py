@@ -92,9 +92,9 @@ def mm_homogenize() -> None:
     homogenize(args.d)
 
 
-def mm_plan_experment() -> None:
+def mm_plan_experiment() -> None:
     parser = argparse.ArgumentParser(
-        prog="mm_plan_experment",
+        prog="mm_plan_experiment",
         description="Create mmPlans.json from dataset_fingerprint.json.",
     )
     parser.add_argument(
