@@ -6,6 +6,7 @@ import torch
 
 from meisenmeister.architectures import (
     BaseArchitecture,
+    PrimusMClsNetwork,
     ResidualEncoderClsNetwork,
     ResNet3D18,
     get_architecture_class,
@@ -19,11 +20,12 @@ class ArchitectureTests(unittest.TestCase):
 
         self.assertIn("ResNet3D18", registry)
         self.assertIn("ResidualEncoderClsNetwork", registry)
+        self.assertIn("PrimusMClsNetwork", registry)
 
     def test_unknown_architecture_error_lists_available_names(self) -> None:
         with self.assertRaisesRegex(
             ValueError,
-            "Unknown architecture 'missing'.*ResNet3D18.*ResidualEncoderClsNetwork",
+            "Unknown architecture 'missing'.*PrimusMClsNetwork.*ResNet3D18.*ResidualEncoderClsNetwork",
         ):
             get_architecture_class("missing")
 
@@ -52,6 +54,37 @@ class ArchitectureTests(unittest.TestCase):
         y = architecture(x)
 
         self.assertEqual(tuple(y.shape), (2, 3))
+
+    def test_primus_m_cls_network_satisfies_base_interface(self) -> None:
+        architecture = PrimusMClsNetwork(
+            in_channels=1,
+            num_classes=2,
+            input_shape=(16, 16, 16),
+        )
+
+        self.assertIsInstance(architecture, BaseArchitecture)
+
+    def test_primus_m_cls_network_forward_shape(self) -> None:
+        architecture = PrimusMClsNetwork(
+            in_channels=1,
+            num_classes=3,
+            input_shape=(16, 16, 16),
+        )
+        x = torch.randn(1, 1, 16, 16, 16)
+
+        y = architecture(x)
+
+        self.assertEqual(tuple(y.shape), (1, 3))
+
+    def test_primus_m_cls_network_grad_cam_not_supported(self) -> None:
+        architecture = PrimusMClsNetwork(
+            in_channels=1,
+            num_classes=2,
+            input_shape=(16, 16, 16),
+        )
+
+        with self.assertRaisesRegex(NotImplementedError, "Grad-CAM is not available"):
+            architecture.get_grad_cam_target_layer()
 
     def test_residual_encoder_cls_network_loads_nnunet_encoder_weights(self) -> None:
         architecture = ResidualEncoderClsNetwork(in_channels=1, num_classes=2)

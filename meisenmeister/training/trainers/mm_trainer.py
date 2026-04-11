@@ -172,6 +172,7 @@ class mmTrainer(BaseTrainer):
                 trainer_name=self.__class__.__name__,
                 architecture_name=self.architecture_name,
                 experiment_postfix=self.experiment_postfix,
+                architecture_kwargs=self.get_architecture_kwargs(),
             )
 
         train_dataset = self.get_train_dataset()
@@ -479,8 +480,12 @@ class mmTrainer(BaseTrainer):
             self._architecture = architecture_class(
                 in_channels=in_channels,
                 num_classes=num_classes,
+                **self.get_architecture_kwargs(),
             ).to(self.device)
         return self._architecture
+
+    def get_architecture_kwargs(self) -> dict:
+        return {}
 
     def get_loss(self):
         if self._loss is None:

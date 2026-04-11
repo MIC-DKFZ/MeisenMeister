@@ -13,8 +13,10 @@ dependencies = [
     "blosc2",
     "breastdivider",
     "dynamic_network_architectures",
+    "einops",
     "numpy",
     "SimpleITK",
+    "timm",
     "torch",
     "torchio",
     "tqdm",
@@ -41,3 +43,10 @@ include-package-data = true
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["meisenmeister*"]
+
+[tool.black]
+target-version = ["py312"]
+
+[tool.isort]
+profile = "black"
+py_version = 312

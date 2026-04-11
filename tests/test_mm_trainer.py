@@ -12,7 +12,8 @@ import blosc2
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
-from meisenmeister.architectures import BaseArchitecture
+
+from meisenmeister.architectures import BaseArchitecture, PrimusMClsNetwork
 from meisenmeister.data_augmentations import Compose3D, RandomShiftWithinMargin3D
 from meisenmeister.training.trainers.mm_trainer import mmTrainer
 from meisenmeister.training.trainers.networks.nnunet_encoder import (
@@ -20,6 +21,7 @@ from meisenmeister.training.trainers.networks.nnunet_encoder import (
     mmTrainer_NNUNetEncoder_Finetune_ClassBalanced,
     mmTrainer_NNUNetEncoder_Finetune_TorchIO,
 )
+from meisenmeister.training.trainers.networks.primus import mmTrainer_PrimusM
 from meisenmeister.utils.training import (
     build_final_validation_evaluation,
     compute_stratified_bootstrap_interval,
@@ -74,6 +76,14 @@ class _TinyGradCamNet(BaseArchitecture):
 
     def get_grad_cam_target_layer(self) -> nn.Module:
         return self.conv
+
+
+class _TinyPrimusLikeNet(_TinyNet):
+    def get_init_kwargs(self) -> dict:
+        return {
+            "input_shape": (16, 16, 16),
+            "patch_embed_size": (8, 8, 8),
+        }
 
 
 class MMTrainerTests(unittest.TestCase):
@@ -239,6 +249,48 @@ class MMTrainerTests(unittest.TestCase):
         trainer._val_dataset = _TinyROIDataset([1, 0])
         return trainer
 
+    def _make_primus_trainer(
+        self,
+        *,
+        target_shape: list[int],
+        num_epochs: int = 100,
+    ) -> mmTrainer_PrimusM:
+        dataset_dir = self.root / "Dataset_001_Test"
+        preprocessed_dataset_dir = self.root / "Dataset_001_Test"
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        (dataset_dir / "dataset.json").write_text("{}", encoding="utf-8")
+        (preprocessed_dataset_dir / "mmPlans.json").write_text(
+            json.dumps(
+                {
+                    "target_shape": target_shape,
+                    "target_spacing": [1.0, 1.0, 1.0],
+                    "margin_mm": [0.0, 0.0, 0.0],
+                }
+            ),
+            encoding="utf-8",
+        )
+        with patch(
+            "meisenmeister.training.trainers.mm_trainer.get_fold_sample_ids",
+            return_value={
+                "train": ["case_000_left", "case_001_left"],
+                "val": ["case_002_left", "case_003_left"],
+            },
+        ):
+            trainer = mmTrainer_PrimusM(
+                dataset_id="001",
+                fold=0,
+                dataset_dir=dataset_dir,
+                preprocessed_dataset_dir=preprocessed_dataset_dir,
+                results_dir=self.root / "results",
+                num_epochs=num_epochs,
+                num_workers=0,
+                compile_enabled=False,
+            )
+        trainer.device = torch.device("cpu")
+        trainer._train_dataset = _TinyROIDataset([0, 1])
+        trainer._val_dataset = _TinyROIDataset([1, 0])
+        return trainer
+
     def test_fit_copies_portable_inference_metadata_to_experiment_dir(self) -> None:
         trainer = self._make_trainer(num_epochs=0)
 
@@ -294,6 +346,37 @@ class MMTrainerTests(unittest.TestCase):
             r"ResidualEncoderClsNetwork requires target_shape divisible by \[16, 32, 32\], got \[129, 165, 184\]",
         ):
             trainer.fit()
+
+    def test_primus_trainer_rejects_incompatible_target_shape_early(self) -> None:
+        trainer = self._make_primus_trainer(target_shape=[15, 16, 16])
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"PrimusMClsNetwork requires target_shape divisible by \[8, 8, 8\], got \[15, 16, 16\]",
+        ):
+            trainer.fit()
+
+    def test_primus_trainer_builds_architecture_kwargs_from_plans(self) -> None:
+        trainer = self._make_primus_trainer(target_shape=[16, 24, 32])
+
+        self.assertEqual(
+            trainer.get_architecture_kwargs(),
+            {
+                "input_shape": (16, 24, 32),
+                "patch_embed_size": (8, 8, 8),
+            },
+        )
+
+    def test_primus_trainer_uses_adamw_transformer_defaults(self) -> None:
+        trainer = self._make_primus_trainer(target_shape=[16, 16, 16], num_epochs=1)
+        trainer._architecture = _TinyPrimusLikeNet().to(trainer.device)
+
+        optimizer = trainer.get_optimizer()
+
+        self.assertIsInstance(optimizer, torch.optim.AdamW)
+        self.assertEqual(float(optimizer.param_groups[0]["lr"]), 3e-4)
+        self.assertEqual(float(optimizer.param_groups[0]["weight_decay"]), 5e-2)
+        self.assertEqual(tuple(optimizer.param_groups[0]["betas"]), (0.9, 0.98))
 
     def test_class_balanced_finetune_trainer_weights_minority_class_higher(
         self,
@@ -411,6 +494,17 @@ class MMTrainerTests(unittest.TestCase):
         with self.assertRaisesRegex(NotImplementedError, "Grad-CAM is not available"):
             model.get_grad_cam_target_layer()
 
+    def test_primus_trainer_grad_cam_enablement_fails_clearly(self) -> None:
+        trainer = self._make_primus_trainer(target_shape=[16, 16, 16])
+        trainer._architecture = PrimusMClsNetwork(
+            in_channels=1,
+            num_classes=2,
+            input_shape=(16, 16, 16),
+        )
+
+        with self.assertRaisesRegex(ValueError, "Grad-CAM is not available"):
+            trainer.ensure_grad_cam_available()
+
     def test_run_final_validation_evaluation_writes_grad_cam_outputs(self) -> None:
         trainer = self._make_trainer(num_epochs=0)
         trainer._architecture = _TinyGradCamNet().to(trainer.device)
@@ -506,6 +600,7 @@ class MMTrainerTests(unittest.TestCase):
         self.assertIn("Saved new best model at epoch 2", trainer.log_path.read_text())
         self.assertIsNone(checkpoint["trainer_config"]["source_weights_path"])
         self.assertIsNone(checkpoint["trainer_config"]["experiment_postfix"])
+        self.assertEqual(checkpoint["trainer_config"]["architecture_kwargs"], {})
         self.assertEqual(
             set(eval_payload["predictions"]), {"case_002_left", "case_003_left"}
         )
@@ -572,6 +667,49 @@ class MMTrainerTests(unittest.TestCase):
         )
         self.assertEqual(
             checkpoint["trainer_config"]["experiment_postfix"], "finetuningNNSSL"
+        )
+
+    def test_fit_saves_architecture_kwargs_for_portable_inference(self) -> None:
+        trainer = self._make_primus_trainer(
+            target_shape=[16, 16, 16],
+            num_epochs=1,
+        )
+        trainer._architecture = _TinyPrimusLikeNet().to(trainer.device)
+        train_loader = [object()]
+        val_loader = [object()]
+
+        with (
+            patch.object(trainer, "get_train_dataloader", return_value=train_loader),
+            patch.object(trainer, "get_val_dataloader", return_value=val_loader),
+            patch.object(
+                trainer,
+                "train_step",
+                return_value={"loss": 0.9, "num_samples": 2, "num_correct": 1},
+            ),
+            patch.object(
+                trainer,
+                "validate_step",
+                return_value=self._make_validation_metrics(
+                    loss=0.7,
+                    labels=[0, 0],
+                    predictions=[0, 0],
+                    probabilities=[[0.9, 0.1], [0.8, 0.2]],
+                ),
+            ),
+        ):
+            trainer.fit()
+
+        checkpoint = torch.load(
+            trainer.last_checkpoint_path,
+            map_location="cpu",
+            weights_only=False,
+        )
+        self.assertEqual(
+            checkpoint["trainer_config"]["architecture_kwargs"],
+            {
+                "input_shape": (16, 16, 16),
+                "patch_embed_size": (8, 8, 8),
+            },
         )
 
     def test_fit_loads_external_checkpoint_model_state_dict_weights(self) -> None:

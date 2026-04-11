@@ -56,6 +56,7 @@ def validate_resume_state(
     trainer_name: str,
     architecture_name: str,
     experiment_postfix: str | None,
+    architecture_kwargs: dict | None = None,
 ) -> None:
     config = checkpoint["trainer_config"]
     expected = {
@@ -71,6 +72,13 @@ def validate_resume_state(
         if actual_value != expected_value:
             raise ValueError(
                 f"Resume checkpoint mismatch for '{key}': expected {expected_value!r}, got {actual_value!r}"
+            )
+    if architecture_kwargs is not None:
+        actual_architecture_kwargs = config.get("architecture_kwargs", {})
+        if actual_architecture_kwargs != architecture_kwargs:
+            raise ValueError(
+                "Resume checkpoint mismatch for 'architecture_kwargs': "
+                f"expected {architecture_kwargs!r}, got {actual_architecture_kwargs!r}"
             )
 
 
@@ -186,4 +194,5 @@ def build_trainer_config(
         "device": str(device),
         "num_classes": getattr(architecture, "num_classes", None),
         "in_channels": getattr(architecture, "in_channels", None),
+        "architecture_kwargs": getattr(architecture, "get_init_kwargs", lambda: {})(),
     }

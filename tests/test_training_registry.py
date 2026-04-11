@@ -17,6 +17,7 @@ from meisenmeister.training.trainers.networks.nnunet_encoder import (
     mmTrainer_NNUNetEncoder_Finetune_ClassBalanced,
     mmTrainer_NNUNetEncoder_Finetune_TorchIO,
 )
+from meisenmeister.training.trainers.networks.primus import mmTrainer_PrimusM
 
 
 class TrainingRegistryTests(unittest.TestCase):
@@ -26,6 +27,7 @@ class TrainingRegistryTests(unittest.TestCase):
         self.assertIn("mmTrainer", registry)
         self.assertIn("mmTrainer_Debug", registry)
         self.assertIn("mmTrainer_NNUNetEncoder", registry)
+        self.assertIn("mmTrainer_PrimusM", registry)
         self.assertIn("mmTrainer_NNUNetEncoder_Finetune_ClassBalanced", registry)
         self.assertIn("mmTrainer_NNUNetEncoder_Finetune_TorchIO", registry)
 
@@ -64,6 +66,7 @@ class TrainingRegistryTests(unittest.TestCase):
     def test_architecture_exports_include_resnet3d18(self) -> None:
         self.assertIn("ResNet3D18", get_available_architecture_names())
         self.assertIn("ResidualEncoderClsNetwork", get_available_architecture_names())
+        self.assertIn("PrimusMClsNetwork", get_available_architecture_names())
 
     def test_network_specific_trainer_satisfies_base_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -108,6 +111,24 @@ class TrainingRegistryTests(unittest.TestCase):
                 trainer = mmTrainer_NNUNetEncoder_Finetune_TorchIO(
                     "001", 0, root, root, root
                 )
+
+        self.assertIsInstance(trainer, BaseTrainer)
+
+    def test_primus_trainer_satisfies_base_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "mmPlans.json").write_text(
+                '{"target_shape": [16, 16, 16]}',
+                encoding="utf-8",
+            )
+            with patch(
+                "meisenmeister.training.trainers.mm_trainer.get_fold_sample_ids",
+                return_value={
+                    "train": ["case_001_left", "case_001_right"],
+                    "val": ["case_002_left", "case_002_right"],
+                },
+            ):
+                trainer = mmTrainer_PrimusM("001", 0, root, root, root)
 
         self.assertIsInstance(trainer, BaseTrainer)
 

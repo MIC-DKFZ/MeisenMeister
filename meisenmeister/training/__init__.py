@@ -1,5 +1,6 @@
 from meisenmeister.architectures import (
     BaseArchitecture,
+    PrimusMClsNetwork,
     ResidualEncoderClsNetwork,
     ResNet3D18,
     get_architecture_class,
@@ -22,10 +23,12 @@ from .trainers.networks.nnunet_encoder import (
     mmTrainer_NNUNetEncoder,
     mmTrainer_NNUNetEncoder_Finetune,
 )
+from .trainers.networks.primus import mmTrainer_PrimusM
 
 __all__ = [
     "BaseArchitecture",
     "BaseTrainer",
+    "PrimusMClsNetwork",
     "ResidualEncoderClsNetwork",
     "ResNet3D18",
     "create_five_fold_splits",
@@ -37,6 +40,7 @@ __all__ = [
     "mmTrainer",
     "mmTrainer_NNUNetEncoder",
     "mmTrainer_NNUNetEncoder_Finetune",
+    "mmTrainer_PrimusM",
     "predict",
     "predict_from_modelfolder",
     "preview_da",

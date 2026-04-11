@@ -172,10 +172,12 @@ def _load_model_from_checkpoint_payload(
         raise ValueError(
             "Checkpoint is missing architecture metadata required for portable inference"
         )
+    architecture_kwargs = trainer_config.get("architecture_kwargs", {})
     architecture_class = get_architecture_class(architecture_name)
     model = architecture_class(
         in_channels=int(in_channels),
         num_classes=int(num_classes),
+        **architecture_kwargs,
     ).to(device)
     model.load_state_dict(checkpoint_payload["model_state_dict"])
     model.eval()

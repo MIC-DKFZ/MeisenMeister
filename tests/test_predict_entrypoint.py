@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import numpy as np
 import torch
+
 from meisenmeister.utils.file_utils import discover_case_files
 
 predict_module = importlib.import_module("meisenmeister.training.predict")
@@ -22,6 +23,21 @@ class _ConstantModel(torch.nn.Module):
     def forward(self, x):
         del x
         return self._logits.unsqueeze(0)
+
+
+class _PortableModel(torch.nn.Module):
+    def __init__(self, in_channels: int, num_classes: int, **kwargs) -> None:
+        super().__init__()
+        self.received = {
+            "in_channels": in_channels,
+            "num_classes": num_classes,
+            **kwargs,
+        }
+        self.linear = torch.nn.Linear(1, 1)
+
+    def forward(self, x):
+        del x
+        return torch.zeros((1, 2), dtype=torch.float32)
 
 
 class PredictEntrypointTests(unittest.TestCase):
@@ -362,6 +378,56 @@ class PredictEntrypointTests(unittest.TestCase):
         self.assertEqual(metadata["trainer_name"], "mmTrainer")
         self.assertEqual(metadata["architecture_name"], "ResNet3D18")
         self.assertEqual(metadata["experiment_postfix"], "portable")
+
+    def test_load_model_from_checkpoint_payload_passes_architecture_kwargs(
+        self,
+    ) -> None:
+        checkpoint_payload = {
+            "trainer_config": {
+                "in_channels": 1,
+                "num_classes": 2,
+                "architecture_kwargs": {
+                    "input_shape": (16, 16, 16),
+                    "patch_embed_size": (8, 8, 8),
+                },
+            },
+            "model_state_dict": _PortableModel(1, 2).state_dict(),
+        }
+
+        with (
+            patch(
+                "meisenmeister.training.predict.get_architecture_class",
+                return_value=_PortableModel,
+            ),
+            patch(
+                "meisenmeister.training.predict.maybe_compile_model",
+                side_effect=lambda model, device, enabled: (
+                    model,
+                    False,
+                    "compile disabled",
+                ),
+            ),
+        ):
+            model, compile_applied, compile_status = (
+                predict_module._load_model_from_checkpoint_payload(
+                    checkpoint_payload=checkpoint_payload,
+                    architecture_name="PrimusMClsNetwork",
+                    device=torch.device("cpu"),
+                    compile_model=False,
+                )
+            )
+
+        self.assertFalse(compile_applied)
+        self.assertEqual(compile_status, "compile disabled")
+        self.assertEqual(
+            model.received,
+            {
+                "in_channels": 1,
+                "num_classes": 2,
+                "input_shape": (16, 16, 16),
+                "patch_embed_size": (8, 8, 8),
+            },
+        )
 
     def test_predict_uses_single_identity_variant_when_tta_disabled(self) -> None:
         with patch("meisenmeister.training.predict._get_flip_axes", return_value=[()]):
