@@ -23,7 +23,7 @@ from .trainers.networks.nnunet_encoder import (
     mmTrainer_NNUNetEncoder,
     mmTrainer_NNUNetEncoder_Finetune,
 )
-from .trainers.networks.primus import mmTrainer_PrimusM
+from .trainers.networks.primus import mmTrainer_PrimusM, mmTrainer_PrimusM_bs4
 
 __all__ = [
     "BaseArchitecture",
@@ -41,6 +41,7 @@ __all__ = [
     "mmTrainer_NNUNetEncoder",
     "mmTrainer_NNUNetEncoder_Finetune",
     "mmTrainer_PrimusM",
+    "mmTrainer_PrimusM_bs4",
     "predict",
     "predict_from_modelfolder",
     "preview_da",
