@@ -175,8 +175,13 @@ Runs ROI-level inference using a locally configured dataset id plus the matching
 Example:
 
 ```bash
-mm_predict -d 1 -i /path/to/images -o /path/to/preds -f 0 1 2 3 4
+mm_predict -d 1 -i /path/to/images -o /path/to/preds -f 0 1 2 3 4 --num-workers 8
 ```
+
+Notes:
+
+- `-f all` uses `fold_all/`
+- `--num-workers` controls CPU-side ROI preparation concurrency during inference and defaults to `8`
 
 ### `mm_predict_from_modelfolder`
 
@@ -195,7 +200,7 @@ and must contain:
 Example:
 
 ```bash
-mm_predict_from_modelfolder /shared/Dataset_001_Test/mmTrainer_ResNet3D18 -i /path/to/images -o /path/to/preds -f 0 1 2 3 4
+mm_predict_from_modelfolder /shared/Dataset_001_Test/mmTrainer_ResNet3D18 -i /path/to/images -o /path/to/preds -f 0 1 2 3 4 --num-workers 8
 ```
 
 Training copies `dataset.json` and `mmPlans.json` into the experiment folder automatically so the folder can be shared for inference on another machine. The trainer decides which architecture is used.

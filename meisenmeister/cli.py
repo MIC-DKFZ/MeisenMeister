@@ -412,6 +412,12 @@ def mm_predict() -> None:
         action="store_true",
         help="Disable torch.compile for inference.",
     )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=8,
+        help="Number of CPU worker threads for ROI preparation during inference.",
+    )
     args = parser.parse_args()
     predict(
         args.d,
@@ -423,6 +429,7 @@ def mm_predict() -> None:
         checkpoint=args.checkpoint,
         use_tta=not args.no_tta,
         compile_model=not args.no_compile,
+        num_workers=args.num_workers,
     )
 
 
@@ -471,6 +478,12 @@ def mm_predict_from_modelfolder() -> None:
         action="store_true",
         help="Disable torch.compile for inference.",
     )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=8,
+        help="Number of CPU worker threads for ROI preparation during inference.",
+    )
     args = parser.parse_args()
     predict_from_modelfolder(
         args.model_folder,
@@ -480,6 +493,7 @@ def mm_predict_from_modelfolder() -> None:
         checkpoint=args.checkpoint,
         use_tta=not args.no_tta,
         compile_model=not args.no_compile,
+        num_workers=args.num_workers,
     )
 
 

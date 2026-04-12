@@ -69,7 +69,7 @@ class PredictEntrypointTests(unittest.TestCase):
                     dataset_json={"file_ending": ".nii.gz"},
                     plans={"roi_labels": {"left": 1}},
                     output_dir=Path("/tmp/output"),
-                    max_prefetch=1,
+                    num_workers=1,
                 )
             )
 
@@ -401,6 +401,7 @@ class PredictEntrypointTests(unittest.TestCase):
                     trainer_name="mmTrainer",
                     checkpoint="best",
                     use_tta=True,
+                    num_workers=8,
                 )
 
             payload = json.loads(predictions_path.read_text(encoding="utf-8"))
@@ -470,6 +471,7 @@ class PredictEntrypointTests(unittest.TestCase):
                     input_dir=str(root / "input"),
                     output_dir=str(root / "output"),
                     folds=["all"],
+                    num_workers=8,
                 )
 
         self.assertEqual(mock_load_fold_predictors.call_args.kwargs["folds"], ["all"])
@@ -586,6 +588,7 @@ class PredictEntrypointTests(unittest.TestCase):
                     folds=[0],
                     checkpoint="best",
                     use_tta=True,
+                    num_workers=8,
                 )
 
             payload = json.loads(predictions_path.read_text(encoding="utf-8"))

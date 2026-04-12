@@ -234,6 +234,7 @@ class CliTests(unittest.TestCase):
             checkpoint="best",
             use_tta=True,
             compile_model=True,
+            num_workers=8,
         )
 
     def test_mm_predict_passes_options(self) -> None:
@@ -258,6 +259,8 @@ class CliTests(unittest.TestCase):
                     "--checkpoint",
                     "last",
                     "--no-tta",
+                    "--num-workers",
+                    "4",
                 ],
             ),
             patch("meisenmeister.cli.predict") as mock_predict,
@@ -274,6 +277,7 @@ class CliTests(unittest.TestCase):
             checkpoint="last",
             use_tta=False,
             compile_model=True,
+            num_workers=4,
         )
 
     def test_mm_predict_accepts_all_fold_keyword(self) -> None:
@@ -306,6 +310,7 @@ class CliTests(unittest.TestCase):
             checkpoint="best",
             use_tta=True,
             compile_model=True,
+            num_workers=8,
         )
 
     def test_mm_predict_from_modelfolder_passes_options(self) -> None:
@@ -325,6 +330,8 @@ class CliTests(unittest.TestCase):
                     "--checkpoint",
                     "last",
                     "--no-tta",
+                    "--num-workers",
+                    "3",
                 ],
             ),
             patch("meisenmeister.cli.predict_from_modelfolder") as mock_predict,
@@ -339,6 +346,7 @@ class CliTests(unittest.TestCase):
             checkpoint="last",
             use_tta=False,
             compile_model=True,
+            num_workers=3,
         )
 
     def test_mm_predict_from_modelfolder_accepts_all_fold_keyword(self) -> None:
@@ -368,6 +376,7 @@ class CliTests(unittest.TestCase):
             checkpoint="best",
             use_tta=True,
             compile_model=True,
+            num_workers=8,
         )
 
     def test_mm_evaluate_predictions_passes_options(self) -> None:

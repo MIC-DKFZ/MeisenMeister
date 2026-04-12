@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import json
-import queue
 import tempfile
-import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from itertools import combinations
 from pathlib import Path
 
@@ -208,21 +207,6 @@ def _prepare_case_prediction_inputs(
     return roi_tensors, artifact_paths
 
 
-def _put_prepared_queue_item(
-    prepared_queue: queue.Queue,
-    item: tuple,
-    *,
-    stop_event: threading.Event,
-) -> bool:
-    while not stop_event.is_set():
-        try:
-            prepared_queue.put(item, timeout=0.1)
-            return True
-        except queue.Full:
-            continue
-    return False
-
-
 def _iter_prepared_case_prediction_inputs(
     *,
     case_files_by_case_id: dict[str, list[Path]],
@@ -230,66 +214,47 @@ def _iter_prepared_case_prediction_inputs(
     dataset_json: dict,
     plans: dict,
     output_dir: Path,
-    max_prefetch: int = 2,
+    num_workers: int,
 ):
-    prepared_queue: queue.Queue = queue.Queue(maxsize=max_prefetch)
-    stop_event = threading.Event()
+    case_items = sorted(case_files_by_case_id.items())
+    if not case_items:
+        return
 
-    def _producer() -> None:
-        try:
-            for case_id, case_files in sorted(case_files_by_case_id.items()):
-                if stop_event.is_set():
-                    return
-                roi_tensors, artifact_paths = _prepare_case_prediction_inputs(
-                    case_id=case_id,
-                    case_files=case_files,
-                    breast_mask_path=breast_mask_paths[case_id],
-                    dataset_json=dataset_json,
-                    plans=plans,
-                    output_dir=output_dir,
+    worker_count = max(1, int(num_workers))
+    max_prefetch = max(worker_count, 2)
+
+    def _prepare_case(case_id: str, case_files: list[Path]):
+        roi_tensors, artifact_paths = _prepare_case_prediction_inputs(
+            case_id=case_id,
+            case_files=case_files,
+            breast_mask_path=breast_mask_paths[case_id],
+            dataset_json=dataset_json,
+            plans=plans,
+            output_dir=output_dir,
+        )
+        return case_id, roi_tensors, artifact_paths
+
+    with ThreadPoolExecutor(
+        max_workers=worker_count,
+        thread_name_prefix="mm_predict_prepare",
+    ) as executor:
+        in_flight: dict[int, Future] = {}
+        submit_index = 0
+        yield_index = 0
+
+        while yield_index < len(case_items):
+            while submit_index < len(case_items) and len(in_flight) < max_prefetch:
+                case_id, case_files = case_items[submit_index]
+                in_flight[submit_index] = executor.submit(
+                    _prepare_case,
+                    case_id,
+                    case_files,
                 )
-                if not _put_prepared_queue_item(
-                    prepared_queue,
-                    ("item", case_id, roi_tensors, artifact_paths),
-                    stop_event=stop_event,
-                ):
-                    return
-        except BaseException as error:
-            _put_prepared_queue_item(
-                prepared_queue,
-                ("error", error),
-                stop_event=stop_event,
-            )
-        finally:
-            _put_prepared_queue_item(
-                prepared_queue,
-                ("done",),
-                stop_event=stop_event,
-            )
+                submit_index += 1
 
-    producer_thread = threading.Thread(
-        target=_producer,
-        name="mm_predict_prepare_inputs",
-        daemon=True,
-    )
-    producer_thread.start()
-
-    try:
-        while True:
-            item = prepared_queue.get()
-            tag = item[0]
-            if tag == "item":
-                _, case_id, roi_tensors, artifact_paths = item
-                yield case_id, roi_tensors, artifact_paths
-                continue
-            if tag == "error":
-                raise item[1]
-            if tag == "done":
-                break
-            raise RuntimeError(f"Unexpected prepared queue item tag: {tag!r}")
-    finally:
-        stop_event.set()
-        producer_thread.join()
+            future = in_flight.pop(yield_index)
+            yield future.result()
+            yield_index += 1
 
 
 def _resolve_checkpoint_path(*, fold_dir: Path, checkpoint: str) -> Path:
@@ -451,6 +416,7 @@ def _run_prediction(
     checkpoint: str,
     use_tta: bool,
     compile_model: bool,
+    num_workers: int,
 ) -> Path:
     output_path.mkdir(parents=True, exist_ok=True)
     case_files_by_case_id = discover_case_files(input_path, dataset_json)
@@ -485,6 +451,7 @@ def _run_prediction(
             dataset_json=dataset_json,
             plans=plans,
             output_dir=output_path,
+            num_workers=num_workers,
         ),
         total=len(case_files_by_case_id),
         desc="Classifying cases",
@@ -562,6 +529,7 @@ def predict(
     checkpoint: str = "best",
     use_tta: bool = True,
     compile_model: bool = True,
+    num_workers: int = 8,
 ) -> Path:
     if not 0 <= d <= 999:
         raise ValueError(f"Dataset id must be between 0 and 999, got {d}")
@@ -617,6 +585,7 @@ def predict(
         checkpoint=checkpoint,
         use_tta=use_tta,
         compile_model=compile_model,
+        num_workers=num_workers,
     )
 
 
@@ -628,6 +597,7 @@ def predict_from_modelfolder(
     checkpoint: str = "best",
     use_tta: bool = True,
     compile_model: bool = True,
+    num_workers: int = 8,
 ) -> Path:
     if checkpoint not in {"best", "last"}:
         raise ValueError(
@@ -663,4 +633,5 @@ def predict_from_modelfolder(
         checkpoint=checkpoint,
         use_tta=use_tta,
         compile_model=compile_model,
+        num_workers=num_workers,
     )
