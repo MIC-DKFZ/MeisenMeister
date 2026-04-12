@@ -276,6 +276,38 @@ class CliTests(unittest.TestCase):
             compile_model=True,
         )
 
+    def test_mm_predict_accepts_all_fold_keyword(self) -> None:
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "mm_predict",
+                    "-d",
+                    "1",
+                    "-i",
+                    "/tmp/in",
+                    "-o",
+                    "/tmp/out",
+                    "-f",
+                    "all",
+                ],
+            ),
+            patch("meisenmeister.cli.predict") as mock_predict,
+        ):
+            cli.mm_predict()
+
+        mock_predict.assert_called_once_with(
+            1,
+            input_dir="/tmp/in",
+            output_dir="/tmp/out",
+            folds=["all"],
+            trainer_name="mmTrainer",
+            experiment_postfix=None,
+            checkpoint="best",
+            use_tta=True,
+            compile_model=True,
+        )
+
     def test_mm_predict_from_modelfolder_passes_options(self) -> None:
         with (
             patch(
@@ -306,6 +338,35 @@ class CliTests(unittest.TestCase):
             folds=[0, 2],
             checkpoint="last",
             use_tta=False,
+            compile_model=True,
+        )
+
+    def test_mm_predict_from_modelfolder_accepts_all_fold_keyword(self) -> None:
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "mm_predict_from_modelfolder",
+                    "/tmp/model",
+                    "-i",
+                    "/tmp/in",
+                    "-o",
+                    "/tmp/out",
+                    "-f",
+                    "all",
+                ],
+            ),
+            patch("meisenmeister.cli.predict_from_modelfolder") as mock_predict,
+        ):
+            cli.mm_predict_from_modelfolder()
+
+        mock_predict.assert_called_once_with(
+            "/tmp/model",
+            input_dir="/tmp/in",
+            output_dir="/tmp/out",
+            folds=["all"],
+            checkpoint="best",
+            use_tta=True,
             compile_model=True,
         )
 

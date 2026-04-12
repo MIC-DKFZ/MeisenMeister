@@ -23,7 +23,7 @@ from meisenmeister.utils import (
 )
 
 
-def _parse_train_fold(value: str) -> int | str:
+def _parse_fold(value: str) -> int | str:
     if value == "all":
         return value
     try:
@@ -163,7 +163,7 @@ def mm_train() -> None:
     parser.add_argument(
         "-f",
         "--fold",
-        type=_parse_train_fold,
+        type=_parse_fold,
         required=True,
         help="Fold index from splits.json, or 'all' to use all samples for both train and val.",
     )
@@ -382,10 +382,10 @@ def mm_predict() -> None:
     parser.add_argument(
         "-f",
         "--folds",
-        type=int,
+        type=_parse_fold,
         nargs="+",
         required=True,
-        help="One or more fold indices to use for ensembling.",
+        help="One or more fold indices to use for ensembling, or 'all' to use every available fold directory.",
     )
     parser.add_argument(
         "--trainer",
@@ -450,10 +450,10 @@ def mm_predict_from_modelfolder() -> None:
     parser.add_argument(
         "-f",
         "--folds",
-        type=int,
+        type=_parse_fold,
         nargs="+",
         required=True,
-        help="One or more fold indices to use for ensembling.",
+        help="One or more fold indices to use for ensembling, or 'all' to use every available fold directory.",
     )
     parser.add_argument(
         "--checkpoint",

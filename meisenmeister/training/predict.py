@@ -48,6 +48,31 @@ def _validate_folds(folds: list[int]) -> list[int]:
     return unique_folds
 
 
+def _discover_available_folds(experiment_dir: Path) -> list[int]:
+    available_folds = sorted(
+        int(path.name.removeprefix("fold_"))
+        for path in experiment_dir.iterdir()
+        if path.is_dir()
+        and path.name.startswith("fold_")
+        and path.name.removeprefix("fold_").isdigit()
+    )
+    if not available_folds:
+        raise ValueError(f"No fold_<n> directories found in {experiment_dir}")
+    return available_folds
+
+
+def _normalize_prediction_folds(
+    folds: list[int | str], *, experiment_dir: Path
+) -> list[int]:
+    if not folds:
+        raise ValueError("At least one fold must be provided")
+    if "all" in folds:
+        if len(folds) != 1:
+            raise ValueError("'all' cannot be combined with explicit fold indices")
+        return _discover_available_folds(experiment_dir)
+    return _validate_folds([int(fold) for fold in folds])
+
+
 def _get_flip_axes(use_tta: bool) -> list[tuple[int, ...]]:
     if not use_tta:
         return [()]
@@ -401,7 +426,7 @@ def predict(
     d: int,
     input_dir: str,
     output_dir: str,
-    folds: list[int],
+    folds: list[int | str],
     trainer_name: str = "mmTrainer",
     experiment_postfix: str | None = None,
     checkpoint: str = "best",
@@ -415,7 +440,6 @@ def predict(
             f"checkpoint must be one of ('best', 'last'), got {checkpoint!r}"
         )
 
-    fold_values = _validate_folds(folds)
     input_path = Path(input_dir)
     output_path = Path(output_dir)
 
@@ -427,6 +451,15 @@ def predict(
     architecture_name = _resolve_trainer_architecture_name(trainer_name)
     dataset_json = load_dataset_json(dataset_dir)
     plans = load_mm_plans(preprocessed_dataset_dir / "mmPlans.json")
+    experiment_dir = build_experiment_paths(
+        results_dir=results_dir,
+        dataset_name=dataset_dir.name,
+        trainer_name=trainer_name,
+        architecture_name=architecture_name,
+        experiment_postfix=experiment_postfix,
+        fold=0,
+    )["experiment_dir"]
+    fold_values = _normalize_prediction_folds(folds, experiment_dir=experiment_dir)
     fold_predictors = _load_fold_predictors(
         dataset_id=dataset_id,
         dataset_dir=dataset_dir,
@@ -461,7 +494,7 @@ def predict_from_modelfolder(
     model_folder: str,
     input_dir: str,
     output_dir: str,
-    folds: list[int],
+    folds: list[int | str],
     checkpoint: str = "best",
     use_tta: bool = True,
     compile_model: bool = True,
@@ -471,8 +504,8 @@ def predict_from_modelfolder(
             f"checkpoint must be one of ('best', 'last'), got {checkpoint!r}"
         )
 
-    fold_values = _validate_folds(folds)
     experiment_dir = Path(model_folder)
+    fold_values = _normalize_prediction_folds(folds, experiment_dir=experiment_dir)
     input_path = Path(input_dir)
     output_path = Path(output_dir)
     dataset_json = load_dataset_json(experiment_dir)

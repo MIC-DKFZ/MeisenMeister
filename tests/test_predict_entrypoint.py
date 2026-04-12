@@ -231,6 +231,66 @@ class PredictEntrypointTests(unittest.TestCase):
             self.assertEqual(left_case_001["prediction"], 1)
             self.assertEqual(sorted(left_case_001["per_fold"]), ["0", "1"])
 
+    def test_predict_expands_all_to_available_experiment_folds(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            dataset_dir = root / "Dataset_001_Test"
+            preprocessed_root = root / "preprocessed"
+            preprocessed_dir = preprocessed_root / dataset_dir.name
+            results_dir = root / "results"
+            experiment_dir = results_dir / dataset_dir.name / "mmTrainer_ResNet3D18"
+            dataset_dir.mkdir()
+            preprocessed_dir.mkdir(parents=True)
+            (experiment_dir / "fold_0").mkdir(parents=True)
+            (experiment_dir / "fold_2").mkdir(parents=True)
+
+            with (
+                patch(
+                    "meisenmeister.training.predict._resolve_trainer_architecture_name",
+                    return_value="ResNet3D18",
+                ),
+                patch(
+                    "meisenmeister.training.predict.verify_required_global_paths_set",
+                    return_value={
+                        "mm_raw": root,
+                        "mm_preprocessed": preprocessed_root,
+                        "mm_results": results_dir,
+                    },
+                ),
+                patch(
+                    "meisenmeister.training.predict.find_dataset_dir",
+                    return_value=dataset_dir,
+                ),
+                patch(
+                    "meisenmeister.training.predict.load_dataset_json",
+                    return_value={
+                        "file_ending": ".nii.gz",
+                        "channel_names": {"0": "image"},
+                    },
+                ),
+                patch(
+                    "meisenmeister.training.predict.load_mm_plans",
+                    return_value={"roi_labels": {"left": 1}},
+                ),
+                patch(
+                    "meisenmeister.training.predict._load_fold_predictors",
+                    return_value=[],
+                ) as mock_load_fold_predictors,
+                patch(
+                    "meisenmeister.training.predict._run_prediction",
+                    return_value=Path("/tmp/predictions.json"),
+                ) as mock_run_prediction,
+            ):
+                predict_module.predict.__wrapped__(
+                    1,
+                    input_dir=str(root / "input"),
+                    output_dir=str(root / "output"),
+                    folds=["all"],
+                )
+
+        self.assertEqual(mock_load_fold_predictors.call_args.kwargs["folds"], [0, 2])
+        self.assertEqual(mock_run_prediction.call_args.kwargs["folds"], [0, 2])
+
     def test_predict_from_modelfolder_writes_outputs_without_global_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
