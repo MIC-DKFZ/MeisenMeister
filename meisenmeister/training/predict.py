@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import queue
 import tempfile
+import threading
 from itertools import combinations
 from pathlib import Path
 
@@ -206,6 +208,90 @@ def _prepare_case_prediction_inputs(
     return roi_tensors, artifact_paths
 
 
+def _put_prepared_queue_item(
+    prepared_queue: queue.Queue,
+    item: tuple,
+    *,
+    stop_event: threading.Event,
+) -> bool:
+    while not stop_event.is_set():
+        try:
+            prepared_queue.put(item, timeout=0.1)
+            return True
+        except queue.Full:
+            continue
+    return False
+
+
+def _iter_prepared_case_prediction_inputs(
+    *,
+    case_files_by_case_id: dict[str, list[Path]],
+    breast_mask_paths: dict[str, Path],
+    dataset_json: dict,
+    plans: dict,
+    output_dir: Path,
+    max_prefetch: int = 2,
+):
+    prepared_queue: queue.Queue = queue.Queue(maxsize=max_prefetch)
+    stop_event = threading.Event()
+
+    def _producer() -> None:
+        try:
+            for case_id, case_files in sorted(case_files_by_case_id.items()):
+                if stop_event.is_set():
+                    return
+                roi_tensors, artifact_paths = _prepare_case_prediction_inputs(
+                    case_id=case_id,
+                    case_files=case_files,
+                    breast_mask_path=breast_mask_paths[case_id],
+                    dataset_json=dataset_json,
+                    plans=plans,
+                    output_dir=output_dir,
+                )
+                if not _put_prepared_queue_item(
+                    prepared_queue,
+                    ("item", case_id, roi_tensors, artifact_paths),
+                    stop_event=stop_event,
+                ):
+                    return
+        except BaseException as error:
+            _put_prepared_queue_item(
+                prepared_queue,
+                ("error", error),
+                stop_event=stop_event,
+            )
+        finally:
+            _put_prepared_queue_item(
+                prepared_queue,
+                ("done",),
+                stop_event=stop_event,
+            )
+
+    producer_thread = threading.Thread(
+        target=_producer,
+        name="mm_predict_prepare_inputs",
+        daemon=True,
+    )
+    producer_thread.start()
+
+    try:
+        while True:
+            item = prepared_queue.get()
+            tag = item[0]
+            if tag == "item":
+                _, case_id, roi_tensors, artifact_paths = item
+                yield case_id, roi_tensors, artifact_paths
+                continue
+            if tag == "error":
+                raise item[1]
+            if tag == "done":
+                break
+            raise RuntimeError(f"Unexpected prepared queue item tag: {tag!r}")
+    finally:
+        stop_event.set()
+        producer_thread.join()
+
+
 def _resolve_checkpoint_path(*, fold_dir: Path, checkpoint: str) -> Path:
     return fold_dir / ("model_best.pt" if checkpoint == "best" else "model_last.pt")
 
@@ -392,19 +478,18 @@ def _run_prediction(
         ),
     )
 
-    for case_id, case_files in tqdm(
-        sorted(case_files_by_case_id.items()),
-        desc="Classifying cases",
-        unit="case",
-    ):
-        roi_tensors, artifact_paths = _prepare_case_prediction_inputs(
-            case_id=case_id,
-            case_files=case_files,
-            breast_mask_path=breast_mask_paths[case_id],
+    for case_id, roi_tensors, artifact_paths in tqdm(
+        _iter_prepared_case_prediction_inputs(
+            case_files_by_case_id=case_files_by_case_id,
+            breast_mask_paths=breast_mask_paths,
             dataset_json=dataset_json,
             plans=plans,
             output_dir=output_path,
-        )
+        ),
+        total=len(case_files_by_case_id),
+        desc="Classifying cases",
+        unit="case",
+    ):
         roi_results = {}
         for roi_name, roi_tensor in roi_tensors.items():
             per_fold = {}

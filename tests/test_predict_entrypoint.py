@@ -41,6 +41,45 @@ class _PortableModel(torch.nn.Module):
 
 
 class PredictEntrypointTests(unittest.TestCase):
+    def test_iter_prepared_case_prediction_inputs_yields_sorted_cases(self) -> None:
+        case_files = {
+            "case_002": [Path("/tmp/case_002_0000.nii.gz")],
+            "case_001": [Path("/tmp/case_001_0000.nii.gz")],
+        }
+        breast_mask_paths = {
+            "case_001": Path("/tmp/case_001_breast_mask.nii.gz"),
+            "case_002": Path("/tmp/case_002_breast_mask.nii.gz"),
+        }
+
+        def _fake_prepare_case_prediction_inputs(**kwargs):
+            case_id = kwargs["case_id"]
+            return (
+                {"left": f"tensor-{case_id}"},
+                {"breast_mask": str(kwargs["breast_mask_path"])},
+            )
+
+        with patch(
+            "meisenmeister.training.predict._prepare_case_prediction_inputs",
+            side_effect=_fake_prepare_case_prediction_inputs,
+        ):
+            prepared = list(
+                predict_module._iter_prepared_case_prediction_inputs(
+                    case_files_by_case_id=case_files,
+                    breast_mask_paths=breast_mask_paths,
+                    dataset_json={"file_ending": ".nii.gz"},
+                    plans={"roi_labels": {"left": 1}},
+                    output_dir=Path("/tmp/output"),
+                    max_prefetch=1,
+                )
+            )
+
+        self.assertEqual([item[0] for item in prepared], ["case_001", "case_002"])
+        self.assertEqual(prepared[0][1]["left"], "tensor-case_001")
+        self.assertEqual(
+            prepared[1][2]["breast_mask"],
+            "/tmp/case_002_breast_mask.nii.gz",
+        )
+
     def test_generate_breast_masks_for_cases_runs_single_directory_inference(
         self,
     ) -> None:
