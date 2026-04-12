@@ -487,6 +487,66 @@ def _build_prediction_payload(
     }
 
 
+def _build_concise_prediction_payload(
+    predictions_path: Path,
+    *,
+    dataset_json: dict,
+) -> dict:
+    payload = json.loads(predictions_path.read_text(encoding="utf-8"))
+    cases = payload.get("cases")
+    if not isinstance(cases, dict) or len(cases) != 1:
+        raise ValueError(
+            "Concise output requires predictions.json to contain exactly one case"
+        )
+
+    label_names = dataset_json["labels"]
+    sorted_label_ids = sorted(int(label_id) for label_id in label_names)
+    ordered_label_names = [label_names[str(label_id)] for label_id in sorted_label_ids]
+
+    _, case_payload = next(iter(cases.items()))
+    rois = case_payload.get("rois")
+    if not isinstance(rois, dict):
+        raise ValueError("Prediction case payload must define a 'rois' object")
+
+    concise_payload = {}
+    for roi_name, roi_payload in sorted(rois.items()):
+        probabilities = roi_payload.get("probabilities")
+        if not isinstance(probabilities, list):
+            raise ValueError(
+                f"Prediction ROI '{roi_name}' must define a 'probabilities' list"
+            )
+        if len(probabilities) != len(ordered_label_names):
+            raise ValueError(
+                f"Prediction ROI '{roi_name}' has {len(probabilities)} probabilities, "
+                f"expected {len(ordered_label_names)}"
+            )
+        concise_payload[roi_name] = {
+            label_name: float(probability)
+            for label_name, probability in zip(
+                ordered_label_names,
+                probabilities,
+                strict=True,
+            )
+        }
+    return concise_payload
+
+
+def _write_concise_prediction_output(
+    predictions_path: Path,
+    *,
+    dataset_json: dict,
+    concise_output_path: str,
+) -> Path:
+    output_path = Path(concise_output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    concise_payload = _build_concise_prediction_payload(
+        predictions_path,
+        dataset_json=dataset_json,
+    )
+    output_path.write_text(json.dumps(concise_payload, indent=2), encoding="utf-8")
+    return output_path
+
+
 def _run_prediction(
     *,
     dataset_id: str | None,
@@ -504,6 +564,7 @@ def _run_prediction(
     use_tta: bool,
     compile_model: bool,
     num_workers: int,
+    concise_output_path: str | None,
 ) -> Path:
     output_path.mkdir(parents=True, exist_ok=True)
     case_files_by_case_id = discover_case_files(input_path, dataset_json)
@@ -577,6 +638,12 @@ def _run_prediction(
 
     predictions_path = output_path / "predictions.json"
     predictions_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    if concise_output_path is not None:
+        _write_concise_prediction_output(
+            predictions_path,
+            dataset_json=dataset_json,
+            concise_output_path=concise_output_path,
+        )
     return predictions_path
 
 
@@ -617,6 +684,7 @@ def predict(
     use_tta: bool = True,
     compile_model: bool = True,
     num_workers: int = 8,
+    concise_output_path: str | None = None,
 ) -> Path:
     if not 0 <= d <= 999:
         raise ValueError(f"Dataset id must be between 0 and 999, got {d}")
@@ -676,6 +744,7 @@ def predict(
         use_tta=use_tta,
         compile_model=compile_model,
         num_workers=num_workers,
+        concise_output_path=concise_output_path,
     )
 
 
@@ -688,6 +757,7 @@ def predict_from_modelfolder(
     use_tta: bool = True,
     compile_model: bool = True,
     num_workers: int = 8,
+    concise_output_path: str | None = None,
 ) -> Path:
     if checkpoint not in {"best", "last"}:
         raise ValueError(
@@ -727,4 +797,5 @@ def predict_from_modelfolder(
         use_tta=use_tta,
         compile_model=compile_model,
         num_workers=num_workers,
+        concise_output_path=concise_output_path,
     )

@@ -418,6 +418,10 @@ def mm_predict() -> None:
         default=8,
         help="Number of CPU worker threads for ROI preparation during inference.",
     )
+    parser.add_argument(
+        "--concise-output",
+        help="Optional path for a concise single-case ROI probability JSON derived from predictions.json.",
+    )
     args = parser.parse_args()
     predict(
         args.d,
@@ -430,6 +434,7 @@ def mm_predict() -> None:
         use_tta=not args.no_tta,
         compile_model=not args.no_compile,
         num_workers=args.num_workers,
+        concise_output_path=args.concise_output,
     )
 
 
@@ -484,6 +489,10 @@ def mm_predict_from_modelfolder() -> None:
         default=8,
         help="Number of CPU worker threads for ROI preparation during inference.",
     )
+    parser.add_argument(
+        "--concise-output",
+        help="Optional path for a concise single-case ROI probability JSON derived from predictions.json.",
+    )
     args = parser.parse_args()
     predict_from_modelfolder(
         args.model_folder,
@@ -494,6 +503,7 @@ def mm_predict_from_modelfolder() -> None:
         use_tta=not args.no_tta,
         compile_model=not args.no_compile,
         num_workers=args.num_workers,
+        concise_output_path=args.concise_output,
     )
 
 

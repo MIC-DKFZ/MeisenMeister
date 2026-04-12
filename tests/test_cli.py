@@ -235,6 +235,7 @@ class CliTests(unittest.TestCase):
             use_tta=True,
             compile_model=True,
             num_workers=8,
+            concise_output_path=None,
         )
 
     def test_mm_predict_passes_options(self) -> None:
@@ -261,6 +262,8 @@ class CliTests(unittest.TestCase):
                     "--no-tta",
                     "--num-workers",
                     "4",
+                    "--concise-output",
+                    "/tmp/concise.json",
                 ],
             ),
             patch("meisenmeister.cli.predict") as mock_predict,
@@ -278,6 +281,7 @@ class CliTests(unittest.TestCase):
             use_tta=False,
             compile_model=True,
             num_workers=4,
+            concise_output_path="/tmp/concise.json",
         )
 
     def test_mm_predict_accepts_all_fold_keyword(self) -> None:
@@ -311,6 +315,7 @@ class CliTests(unittest.TestCase):
             use_tta=True,
             compile_model=True,
             num_workers=8,
+            concise_output_path=None,
         )
 
     def test_mm_predict_from_modelfolder_passes_options(self) -> None:
@@ -332,6 +337,8 @@ class CliTests(unittest.TestCase):
                     "--no-tta",
                     "--num-workers",
                     "3",
+                    "--concise-output",
+                    "/tmp/concise.json",
                 ],
             ),
             patch("meisenmeister.cli.predict_from_modelfolder") as mock_predict,
@@ -347,6 +354,7 @@ class CliTests(unittest.TestCase):
             use_tta=False,
             compile_model=True,
             num_workers=3,
+            concise_output_path="/tmp/concise.json",
         )
 
     def test_mm_predict_from_modelfolder_accepts_all_fold_keyword(self) -> None:
@@ -377,6 +385,7 @@ class CliTests(unittest.TestCase):
             use_tta=True,
             compile_model=True,
             num_workers=8,
+            concise_output_path=None,
         )
 
     def test_mm_evaluate_predictions_passes_options(self) -> None:

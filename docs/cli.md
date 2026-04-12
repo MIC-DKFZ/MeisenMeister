@@ -183,6 +183,24 @@ Notes:
 - `-f all` uses `fold_all/`
 - `--num-workers` controls CPU-side ROI preparation concurrency during inference and defaults to `8`
 - prediction input folders may use either `.nii.gz` or `.mha` case files at runtime.
+- `--concise-output /path/to/roi_probs.json` writes an additional compact JSON for exactly one input case, derived from the final `predictions.json`
+
+Example concise JSON:
+
+```json
+{
+  "right": {
+    "normal": 0.001,
+    "benign": 0.01,
+    "malignant": 0.988
+  },
+  "left": {
+    "normal": 0.987,
+    "benign": 0.02,
+    "malignant": 0.001
+  }
+}
+```
 
 ### `mm_predict_from_modelfolder`
 
@@ -205,6 +223,8 @@ mm_predict_from_modelfolder /shared/Dataset_001_Test/mmTrainer_ResNet3D18 -i /pa
 ```
 
 Training copies `dataset.json` and `mmPlans.json` into the experiment folder automatically so the folder can be shared for inference on another machine. The trainer decides which architecture is used.
+
+`--concise-output /path/to/roi_probs.json` is also available here with the same single-case-only behavior.
 
 ### `mm_evaluate_predictions`
 
