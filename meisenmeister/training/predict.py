@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from itertools import combinations
 from pathlib import Path
 
 import numpy as np
 import SimpleITK as sitk
 import torch
+from tqdm import tqdm
 
 from meisenmeister.architectures import get_architecture_class
 from meisenmeister.plan_and_preprocess.create_breast_seg import (
+    _stage_primary_inputs,
     get_breast_segmentation_predictor,
     predict_breast_segmentation,
 )
@@ -48,28 +51,17 @@ def _validate_folds(folds: list[int]) -> list[int]:
     return unique_folds
 
 
-def _discover_available_folds(experiment_dir: Path) -> list[int]:
-    available_folds = sorted(
-        int(path.name.removeprefix("fold_"))
-        for path in experiment_dir.iterdir()
-        if path.is_dir()
-        and path.name.startswith("fold_")
-        and path.name.removeprefix("fold_").isdigit()
-    )
-    if not available_folds:
-        raise ValueError(f"No fold_<n> directories found in {experiment_dir}")
-    return available_folds
-
-
 def _normalize_prediction_folds(
     folds: list[int | str], *, experiment_dir: Path
-) -> list[int]:
+) -> list[int | str]:
     if not folds:
         raise ValueError("At least one fold must be provided")
     if "all" in folds:
         if len(folds) != 1:
             raise ValueError("'all' cannot be combined with explicit fold indices")
-        return _discover_available_folds(experiment_dir)
+        if not (experiment_dir / "fold_all").is_dir():
+            raise ValueError(f"fold_all does not exist in {experiment_dir}")
+        return ["all"]
     return _validate_folds([int(fold) for fold in folds])
 
 
@@ -120,25 +112,68 @@ def _save_binary_mask(
     sitk.WriteImage(binary_image, str(output_path))
 
 
+def _generate_breast_masks_for_cases(
+    *,
+    case_files_by_case_id: dict[str, list[Path]],
+    dataset_json: dict,
+    predictor,
+    output_dir: Path,
+) -> dict[str, Path]:
+    file_ending = dataset_json["file_ending"]
+    mask_paths = {
+        case_id: output_dir / f"{case_id}_breast_mask{file_ending}"
+        for case_id in sorted(case_files_by_case_id)
+    }
+    pending_case_files = {
+        case_id: case_files
+        for case_id, case_files in sorted(case_files_by_case_id.items())
+        if not mask_paths[case_id].is_file()
+    }
+    if not pending_case_files:
+        return mask_paths
+
+    with tempfile.TemporaryDirectory(
+        dir=output_dir,
+        prefix=".mm_breastdivider_",
+    ) as temp_root:
+        temp_root_path = Path(temp_root)
+        staging_input_dir = temp_root_path / "input"
+        staging_input_dir.mkdir()
+
+        staged_case_ids = _stage_primary_inputs(
+            pending_case_files,
+            staging_input_dir=staging_input_dir,
+            file_ending=file_ending,
+        )
+        predict_breast_segmentation(
+            predictor=predictor,
+            input_path=str(staging_input_dir),
+            output_path=str(output_dir),
+        )
+
+        for case_id in staged_case_ids:
+            generated_mask_path = output_dir / f"{case_id}{file_ending}"
+            if not generated_mask_path.is_file():
+                raise FileNotFoundError(
+                    f"Breast segmentation output missing for case {case_id}: {generated_mask_path}"
+                )
+            breast_mask_path = output_dir / f"{case_id}_breast_mask{file_ending}"
+            generated_mask_path.replace(breast_mask_path)
+            mask_paths[case_id] = breast_mask_path
+        return mask_paths
+
+
 def _prepare_case_prediction_inputs(
     *,
     case_id: str,
     case_files: list[Path],
+    breast_mask_path: Path,
     dataset_json: dict,
     plans: dict,
-    predictor,
     output_dir: Path,
 ) -> tuple[dict[str, torch.Tensor], dict[str, str]]:
     ordered_case_files = get_case_channel_files(case_files, dataset_json)
     file_ending = dataset_json["file_ending"]
-    primary_input_path = ordered_case_files[0]
-    breast_mask_path = output_dir / f"{case_id}_breast_mask{file_ending}"
-    predict_breast_segmentation(
-        predictor=predictor,
-        input_path=str(primary_input_path),
-        output_path=str(breast_mask_path),
-    )
-
     mask_image = sitk.ReadImage(str(breast_mask_path))
     mask_array = sitk.GetArrayFromImage(mask_image)
     spacing = [float(i) for i in mask_image.GetSpacing()[::-1]]
@@ -218,7 +253,7 @@ def _load_fold_predictors_from_experiment_dir(
     *,
     experiment_dir: Path,
     architecture_name: str,
-    folds: list[int],
+    folds: list[int | str],
     checkpoint: str,
     compile_model: bool,
 ) -> list[dict]:
@@ -261,7 +296,7 @@ def _load_fold_predictors(
     trainer_name: str,
     architecture_name: str,
     experiment_postfix: str | None,
-    folds: list[int],
+    folds: list[int | str],
     checkpoint: str,
     compile_model: bool,
 ) -> list[dict]:
@@ -291,7 +326,7 @@ def _build_prediction_payload(
     trainer_name: str,
     architecture_name: str,
     experiment_postfix: str | None,
-    folds: list[int],
+    folds: list[int | str],
     checkpoint: str,
     use_tta: bool,
     compile_enabled: bool,
@@ -326,7 +361,7 @@ def _run_prediction(
     trainer_name: str,
     architecture_name: str,
     experiment_postfix: str | None,
-    folds: list[int],
+    folds: list[int | str],
     checkpoint: str,
     use_tta: bool,
     compile_model: bool,
@@ -334,6 +369,12 @@ def _run_prediction(
     output_path.mkdir(parents=True, exist_ok=True)
     case_files_by_case_id = discover_case_files(input_path, dataset_json)
     predictor = get_breast_segmentation_predictor()
+    breast_mask_paths = _generate_breast_masks_for_cases(
+        case_files_by_case_id=case_files_by_case_id,
+        dataset_json=dataset_json,
+        predictor=predictor,
+        output_dir=output_path,
+    )
     payload = _build_prediction_payload(
         dataset_id=dataset_id,
         dataset_name=dataset_name,
@@ -351,13 +392,17 @@ def _run_prediction(
         ),
     )
 
-    for case_id, case_files in sorted(case_files_by_case_id.items()):
+    for case_id, case_files in tqdm(
+        sorted(case_files_by_case_id.items()),
+        desc="Classifying cases",
+        unit="case",
+    ):
         roi_tensors, artifact_paths = _prepare_case_prediction_inputs(
             case_id=case_id,
             case_files=case_files,
+            breast_mask_path=breast_mask_paths[case_id],
             dataset_json=dataset_json,
             plans=plans,
-            predictor=predictor,
             output_dir=output_path,
         )
         roi_results = {}
@@ -397,7 +442,7 @@ def _run_prediction(
 
 
 def _get_experiment_metadata(
-    experiment_dir: Path, folds: list[int], checkpoint: str
+    experiment_dir: Path, folds: list[int | str], checkpoint: str
 ) -> dict:
     checkpoint_path = _resolve_checkpoint_path(
         fold_dir=experiment_dir / f"fold_{folds[0]}",

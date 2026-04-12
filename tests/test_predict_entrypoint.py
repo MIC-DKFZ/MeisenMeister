@@ -41,6 +41,145 @@ class _PortableModel(torch.nn.Module):
 
 
 class PredictEntrypointTests(unittest.TestCase):
+    def test_generate_breast_masks_for_cases_runs_single_directory_inference(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            input_dir = root / "input"
+            output_dir = root / "output"
+            input_dir.mkdir()
+            output_dir.mkdir()
+            for filename in (
+                "case_001_0000.nii.gz",
+                "case_001_0001.nii.gz",
+                "case_002_0000.nii.gz",
+                "case_002_0001.nii.gz",
+            ):
+                (input_dir / filename).write_text(filename, encoding="utf-8")
+
+            case_files = {
+                "case_001": [
+                    input_dir / "case_001_0000.nii.gz",
+                    input_dir / "case_001_0001.nii.gz",
+                ],
+                "case_002": [
+                    input_dir / "case_002_0000.nii.gz",
+                    input_dir / "case_002_0001.nii.gz",
+                ],
+            }
+            captured_calls: list[tuple[Path, Path]] = []
+
+            class _Predictor:
+                def predict(self, *, input_path, output_path):
+                    input_path = Path(input_path)
+                    output_path = Path(output_path)
+                    captured_calls.append((input_path, output_path))
+                    staged_files = sorted(path.name for path in input_path.iterdir())
+                    if staged_files != ["case_001_0000.nii.gz", "case_002_0000.nii.gz"]:
+                        raise AssertionError(f"Unexpected staged files: {staged_files}")
+                    (output_path / "case_001.nii.gz").write_text(
+                        "mask-1", encoding="utf-8"
+                    )
+                    (output_path / "case_002.nii.gz").write_text(
+                        "mask-2", encoding="utf-8"
+                    )
+
+            mask_paths = predict_module._generate_breast_masks_for_cases(
+                case_files_by_case_id=case_files,
+                dataset_json={"file_ending": ".nii.gz"},
+                predictor=_Predictor(),
+                output_dir=output_dir,
+            )
+            self.assertEqual(len(captured_calls), 1)
+            self.assertEqual(
+                sorted(path.name for path in mask_paths.values()),
+                ["case_001_breast_mask.nii.gz", "case_002_breast_mask.nii.gz"],
+            )
+            self.assertEqual(
+                (output_dir / "case_001_breast_mask.nii.gz").read_text(
+                    encoding="utf-8"
+                ),
+                "mask-1",
+            )
+            self.assertEqual(
+                (output_dir / "case_002_breast_mask.nii.gz").read_text(
+                    encoding="utf-8"
+                ),
+                "mask-2",
+            )
+
+    def test_generate_breast_masks_for_cases_skips_existing_masks(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            input_dir = root / "input"
+            output_dir = root / "output"
+            input_dir.mkdir()
+            output_dir.mkdir()
+            for filename in (
+                "case_001_0000.nii.gz",
+                "case_001_0001.nii.gz",
+                "case_002_0000.nii.gz",
+                "case_002_0001.nii.gz",
+            ):
+                (input_dir / filename).write_text(filename, encoding="utf-8")
+            (output_dir / "case_001_breast_mask.nii.gz").write_text(
+                "existing-mask", encoding="utf-8"
+            )
+
+            case_files = {
+                "case_001": [
+                    input_dir / "case_001_0000.nii.gz",
+                    input_dir / "case_001_0001.nii.gz",
+                ],
+                "case_002": [
+                    input_dir / "case_002_0000.nii.gz",
+                    input_dir / "case_002_0001.nii.gz",
+                ],
+            }
+            captured_calls: list[tuple[Path, Path]] = []
+
+            class _Predictor:
+                def predict(self, *, input_path, output_path):
+                    input_path = Path(input_path)
+                    output_path = Path(output_path)
+                    captured_calls.append((input_path, output_path))
+                    staged_files = sorted(path.name for path in input_path.iterdir())
+                    if staged_files != ["case_002_0000.nii.gz"]:
+                        raise AssertionError(f"Unexpected staged files: {staged_files}")
+                    (output_path / "case_002.nii.gz").write_text(
+                        "new-mask", encoding="utf-8"
+                    )
+
+            mask_paths = predict_module._generate_breast_masks_for_cases(
+                case_files_by_case_id=case_files,
+                dataset_json={"file_ending": ".nii.gz"},
+                predictor=_Predictor(),
+                output_dir=output_dir,
+            )
+
+            self.assertEqual(len(captured_calls), 1)
+            self.assertEqual(
+                (output_dir / "case_001_breast_mask.nii.gz").read_text(
+                    encoding="utf-8"
+                ),
+                "existing-mask",
+            )
+            self.assertEqual(
+                (output_dir / "case_002_breast_mask.nii.gz").read_text(
+                    encoding="utf-8"
+                ),
+                "new-mask",
+            )
+            self.assertEqual(
+                mask_paths["case_001"],
+                output_dir / "case_001_breast_mask.nii.gz",
+            )
+            self.assertEqual(
+                mask_paths["case_002"],
+                output_dir / "case_002_breast_mask.nii.gz",
+            )
+
     def test_predict_roi_with_tta_averages_all_flip_variants(self) -> None:
         model = _ConstantModel([1.0, 3.0])
         roi_tensor = torch.arange(16, dtype=torch.float32).reshape(1, 2, 2, 4)
@@ -174,6 +313,13 @@ class PredictEntrypointTests(unittest.TestCase):
                     return_value=object(),
                 ),
                 patch(
+                    "meisenmeister.training.predict._generate_breast_masks_for_cases",
+                    return_value={
+                        "case_001": output_dir / "case_001_breast_mask.nii.gz",
+                        "case_002": output_dir / "case_002_breast_mask.nii.gz",
+                    },
+                ),
+                patch(
                     "meisenmeister.training.predict._load_fold_predictors",
                     return_value=[
                         {
@@ -231,7 +377,7 @@ class PredictEntrypointTests(unittest.TestCase):
             self.assertEqual(left_case_001["prediction"], 1)
             self.assertEqual(sorted(left_case_001["per_fold"]), ["0", "1"])
 
-    def test_predict_expands_all_to_available_experiment_folds(self) -> None:
+    def test_predict_uses_literal_fold_all_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             dataset_dir = root / "Dataset_001_Test"
@@ -241,8 +387,7 @@ class PredictEntrypointTests(unittest.TestCase):
             experiment_dir = results_dir / dataset_dir.name / "mmTrainer_ResNet3D18"
             dataset_dir.mkdir()
             preprocessed_dir.mkdir(parents=True)
-            (experiment_dir / "fold_0").mkdir(parents=True)
-            (experiment_dir / "fold_2").mkdir(parents=True)
+            (experiment_dir / "fold_all").mkdir(parents=True)
 
             with (
                 patch(
@@ -288,8 +433,8 @@ class PredictEntrypointTests(unittest.TestCase):
                     folds=["all"],
                 )
 
-        self.assertEqual(mock_load_fold_predictors.call_args.kwargs["folds"], [0, 2])
-        self.assertEqual(mock_run_prediction.call_args.kwargs["folds"], [0, 2])
+        self.assertEqual(mock_load_fold_predictors.call_args.kwargs["folds"], ["all"])
+        self.assertEqual(mock_run_prediction.call_args.kwargs["folds"], ["all"])
 
     def test_predict_from_modelfolder_writes_outputs_without_global_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -353,6 +498,12 @@ class PredictEntrypointTests(unittest.TestCase):
                 patch(
                     "meisenmeister.training.predict.get_breast_segmentation_predictor",
                     return_value=object(),
+                ),
+                patch(
+                    "meisenmeister.training.predict._generate_breast_masks_for_cases",
+                    return_value={
+                        "case_001": output_dir / "case_001_breast_mask.nii.gz",
+                    },
                 ),
                 patch(
                     "meisenmeister.training.predict._get_experiment_metadata",

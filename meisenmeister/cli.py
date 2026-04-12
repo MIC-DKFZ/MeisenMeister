@@ -385,7 +385,7 @@ def mm_predict() -> None:
         type=_parse_fold,
         nargs="+",
         required=True,
-        help="One or more fold indices to use for ensembling, or 'all' to use every available fold directory.",
+        help="One or more fold indices to use for ensembling, or 'all' to use fold_all.",
     )
     parser.add_argument(
         "--trainer",
@@ -453,7 +453,7 @@ def mm_predict_from_modelfolder() -> None:
         type=_parse_fold,
         nargs="+",
         required=True,
-        help="One or more fold indices to use for ensembling, or 'all' to use every available fold directory.",
+        help="One or more fold indices to use for ensembling, or 'all' to use fold_all.",
     )
     parser.add_argument(
         "--checkpoint",
