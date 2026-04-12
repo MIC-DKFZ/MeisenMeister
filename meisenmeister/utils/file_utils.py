@@ -19,7 +19,11 @@ OPTIONAL_MASKS_TR_METADATA_FILES = {
 }
 
 
-def load_dataset_json(dataset_dir: Path) -> dict:
+def load_dataset_json(
+    dataset_dir: Path,
+    *,
+    resolve_training_cases: bool = True,
+) -> dict:
     dataset_json_path = dataset_dir / "dataset.json"
     if not dataset_json_path.is_file():
         raise FileNotFoundError(f"Missing dataset.json in {dataset_dir}")
@@ -36,7 +40,7 @@ def load_dataset_json(dataset_dir: Path) -> dict:
             f"dataset.json in {dataset_dir} is missing required keys: {missing_keys_str}"
         )
 
-    if "training_cases" in dataset_json:
+    if resolve_training_cases and "training_cases" in dataset_json:
         _resolve_training_case_files(dataset_dir, dataset_json)
 
     return dataset_json

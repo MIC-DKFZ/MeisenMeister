@@ -104,6 +104,18 @@ class TrainingCasesLoadingTests(unittest.TestCase):
         with self.assertRaisesRegex(FileNotFoundError, "Missing training_cases file"):
             load_dataset_json(self.dataset_dir)
 
+    def test_load_dataset_json_can_skip_training_case_resolution(self) -> None:
+        payload = self._valid_dataset_json()
+        self._write_dataset_json(payload)
+
+        dataset_json = load_dataset_json(
+            self.dataset_dir,
+            resolve_training_cases=False,
+        )
+
+        self.assertEqual(dataset_json["file_ending"], ".nii.gz")
+        self.assertIn("training_cases", dataset_json)
+
     def test_load_dataset_json_rejects_wrong_file_ending(self) -> None:
         self._create_file(self.root / "shared" / "case_001_0000.nii.gz")
         wrong_suffix = self._create_file(self.root / "shared" / "case_001_0001.nii")

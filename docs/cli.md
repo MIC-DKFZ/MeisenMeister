@@ -182,6 +182,7 @@ Notes:
 
 - `-f all` uses `fold_all/`
 - `--num-workers` controls CPU-side ROI preparation concurrency during inference and defaults to `8`
+- prediction input folders may use either `.nii.gz` or `.mha` case files at runtime.
 
 ### `mm_predict_from_modelfolder`
 

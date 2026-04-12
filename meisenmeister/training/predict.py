@@ -33,6 +33,8 @@ from meisenmeister.utils import (
     verify_required_global_paths_set,
 )
 
+_SUPPORTED_PREDICTION_FILE_ENDINGS = (".nii.gz", ".mha")
+
 
 def _resolve_trainer_architecture_name(trainer_name: str) -> str:
     from meisenmeister.training.registry import get_trainer_class
@@ -64,6 +66,51 @@ def _normalize_prediction_folds(
             raise ValueError(f"fold_all does not exist in {experiment_dir}")
         return ["all"]
     return _validate_folds([int(fold) for fold in folds])
+
+
+def _resolve_prediction_file_ending(input_path: Path, dataset_json: dict) -> str:
+    if not input_path.is_dir():
+        raise FileNotFoundError(f"Missing input directory: {input_path}")
+
+    channel_ids = sorted(
+        int(channel_id) for channel_id in dataset_json["channel_names"]
+    )
+    candidate_suffixes = {
+        file_ending: {f"_{channel_id:04d}{file_ending}" for channel_id in channel_ids}
+        for file_ending in _SUPPORTED_PREDICTION_FILE_ENDINGS
+    }
+    detected_suffixes: set[str] = set()
+
+    for path in input_path.iterdir():
+        if not path.is_file():
+            continue
+        for file_ending, suffixes in candidate_suffixes.items():
+            if any(path.name.endswith(suffix) for suffix in suffixes):
+                detected_suffixes.add(file_ending)
+
+    supported_suffixes = ", ".join(_SUPPORTED_PREDICTION_FILE_ENDINGS)
+    if len(detected_suffixes) > 1:
+        found_suffixes = ", ".join(sorted(detected_suffixes))
+        raise ValueError(
+            f"Mixed prediction input suffixes detected in {input_path}: "
+            f"{found_suffixes}. Prediction supports only one consistent suffix per run "
+            f"from: {supported_suffixes}"
+        )
+    if not detected_suffixes:
+        raise ValueError(
+            f"Could not detect a supported prediction input suffix in {input_path}. "
+            f"Supported suffixes: {supported_suffixes}"
+        )
+    return next(iter(detected_suffixes))
+
+
+def _build_prediction_dataset_json(input_path: Path, dataset_json: dict) -> dict:
+    runtime_dataset_json = dict(dataset_json)
+    runtime_dataset_json["file_ending"] = _resolve_prediction_file_ending(
+        input_path,
+        dataset_json,
+    )
+    return runtime_dataset_json
 
 
 def _get_flip_axes(use_tta: bool) -> list[tuple[int, ...]]:
@@ -113,6 +160,41 @@ def _save_binary_mask(
     sitk.WriteImage(binary_image, str(output_path))
 
 
+def _stage_breastdivider_primary_inputs(
+    case_files_by_case_id: dict[str, list[Path]],
+    *,
+    staging_input_dir: Path,
+    file_ending: str,
+) -> list[str]:
+    if file_ending == ".nii.gz":
+        return _stage_primary_inputs(
+            case_files_by_case_id,
+            staging_input_dir=staging_input_dir,
+            file_ending=file_ending,
+        )
+    if file_ending != ".mha":
+        raise ValueError(
+            f"Unsupported prediction file ending for staging: {file_ending}"
+        )
+
+    staged_case_ids: list[str] = []
+    input_suffix = f"_0000{file_ending}"
+    for case_id, files in sorted(case_files_by_case_id.items()):
+        input_file = next(
+            (path for path in files if path.name.endswith(input_suffix)),
+            None,
+        )
+        if input_file is None:
+            raise FileNotFoundError(
+                f"Missing input file ending with '{input_suffix}' for case {case_id}"
+            )
+        image = sitk.ReadImage(str(input_file))
+        staged_input_path = staging_input_dir / f"{case_id}_0000.nii.gz"
+        sitk.WriteImage(image, str(staged_input_path))
+        staged_case_ids.append(case_id)
+    return staged_case_ids
+
+
 def _generate_breast_masks_for_cases(
     *,
     case_files_by_case_id: dict[str, list[Path]],
@@ -141,7 +223,7 @@ def _generate_breast_masks_for_cases(
         staging_input_dir = temp_root_path / "input"
         staging_input_dir.mkdir()
 
-        staged_case_ids = _stage_primary_inputs(
+        staged_case_ids = _stage_breastdivider_primary_inputs(
             pending_case_files,
             staging_input_dir=staging_input_dir,
             file_ending=file_ending,
@@ -153,13 +235,18 @@ def _generate_breast_masks_for_cases(
         )
 
         for case_id in staged_case_ids:
-            generated_mask_path = output_dir / f"{case_id}{file_ending}"
+            generated_mask_path = output_dir / f"{case_id}.nii.gz"
             if not generated_mask_path.is_file():
                 raise FileNotFoundError(
                     f"Breast segmentation output missing for case {case_id}: {generated_mask_path}"
                 )
             breast_mask_path = output_dir / f"{case_id}_breast_mask{file_ending}"
-            generated_mask_path.replace(breast_mask_path)
+            if file_ending == ".nii.gz":
+                generated_mask_path.replace(breast_mask_path)
+            else:
+                mask_image = sitk.ReadImage(str(generated_mask_path))
+                sitk.WriteImage(mask_image, str(breast_mask_path))
+                generated_mask_path.unlink()
             mask_paths[case_id] = breast_mask_path
         return mask_paths
 
@@ -547,7 +634,10 @@ def predict(
     preprocessed_dataset_dir = paths["mm_preprocessed"] / dataset_dir.name
     results_dir = paths["mm_results"]
     architecture_name = _resolve_trainer_architecture_name(trainer_name)
-    dataset_json = load_dataset_json(dataset_dir)
+    dataset_json = _build_prediction_dataset_json(
+        input_path,
+        load_dataset_json(dataset_dir),
+    )
     plans = load_mm_plans(preprocessed_dataset_dir / "mmPlans.json")
     experiment_dir = build_experiment_paths(
         results_dir=results_dir,
@@ -608,7 +698,10 @@ def predict_from_modelfolder(
     fold_values = _normalize_prediction_folds(folds, experiment_dir=experiment_dir)
     input_path = Path(input_dir)
     output_path = Path(output_dir)
-    dataset_json = load_dataset_json(experiment_dir)
+    dataset_json = _build_prediction_dataset_json(
+        input_path,
+        load_dataset_json(experiment_dir, resolve_training_cases=False),
+    )
     plans = load_mm_plans(experiment_dir / "mmPlans.json")
     metadata = _get_experiment_metadata(experiment_dir, fold_values, checkpoint)
     fold_predictors = _load_fold_predictors_from_experiment_dir(
