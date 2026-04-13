@@ -12,6 +12,20 @@ conda activate meisenmeister
 pip install -e .
 ```
 
+## Pretrained Weights
+
+Pretrained MeisenMeister weights for bilateral breast MRI classification into `healthy`, `benign`, and `malignant` are available on Hugging Face:
+
+https://huggingface.co/Bubenpo/MeisenMeister
+
+Download them with:
+
+```bash
+hf download Bubenpo/MeisenMeister --local-dir ./MeisenMeister
+```
+
+Then run inference from the downloaded weights with `mm_predict_from_modelfolder`.
+
 ## Environment Configuration
 
 MeisenMeister resolves datasets and outputs via three required storage roots:
@@ -35,7 +49,7 @@ export MM_RESULTS=/path/to/mm_results
 3. Preprocessing writes ROI tensors and metadata to `MM_PREPROCESSED`.
 4. Split generation writes leakage-safe five-fold splits.
 5. Training and benchmarking write experiment artifacts to `MM_RESULTS`.
-6. Inference runs either from local dataset context or from a portable model folder.
+6. Inference runs either from local dataset context or from downloaded model weights via `mm_predict_from_modelfolder`.
 
 ## Quickstart
 
