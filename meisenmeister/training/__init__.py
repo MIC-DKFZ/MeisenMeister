@@ -9,7 +9,7 @@ from meisenmeister.architectures import (
 )
 
 from .base_trainer import BaseTrainer
-from .predict import predict, predict_from_modelfolder
+from .predict import predict, predict_case_from_files, predict_from_modelfolder
 from .preview_da import preview_da
 from .registry import (
     get_available_trainer_names,
@@ -43,6 +43,7 @@ __all__ = [
     "mmTrainer_PrimusM",
     "mmTrainer_PrimusM_bs4",
     "predict",
+    "predict_case_from_files",
     "predict_from_modelfolder",
     "preview_da",
     "get_available_trainer_names",

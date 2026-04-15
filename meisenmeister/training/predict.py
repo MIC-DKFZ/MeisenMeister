@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import tempfile
 from concurrent.futures import Future, ThreadPoolExecutor
 from itertools import combinations
@@ -545,6 +546,68 @@ def _write_concise_prediction_output(
     )
     output_path.write_text(json.dumps(concise_payload, indent=2), encoding="utf-8")
     return output_path
+
+
+def _stage_prediction_case_file(source_path: Path, output_path: Path) -> None:
+    try:
+        output_path.symlink_to(source_path)
+    except OSError:
+        shutil.copy2(source_path, output_path)
+
+
+def predict_case_from_files(
+    model_folder: str,
+    pre_path: str,
+    post1_path: str,
+    post2_path: str,
+    *,
+    folds: list[int | str],
+    checkpoint: str = "best",
+    use_tta: bool = True,
+    compile_model: bool = True,
+    num_workers: int = 8,
+) -> dict:
+    experiment_dir = Path(model_folder)
+    dataset_json = load_dataset_json(experiment_dir, resolve_training_cases=False)
+    case_id = "case_000"
+    input_file_ending = dataset_json["file_ending"]
+    run_root = Path(tempfile.mkdtemp(prefix=".mm_predict_case_"))
+    input_dir = run_root / "input"
+    output_dir = run_root / "output"
+    concise_path = run_root / "concise_predictions.json"
+    input_dir.mkdir()
+    output_dir.mkdir()
+
+    for channel_index, source_path in enumerate((pre_path, post1_path, post2_path)):
+        source = Path(source_path).expanduser().resolve()
+        staged_path = input_dir / f"{case_id}_{channel_index:04d}{input_file_ending}"
+        _stage_prediction_case_file(source, staged_path)
+
+    predictions_path = predict_from_modelfolder(
+        str(experiment_dir),
+        input_dir=str(input_dir),
+        output_dir=str(output_dir),
+        folds=folds,
+        checkpoint=checkpoint,
+        use_tta=use_tta,
+        compile_model=compile_model,
+        num_workers=num_workers,
+        concise_output_path=str(concise_path),
+    )
+
+    output_mask_path = output_dir / f"{case_id}_breast_mask{input_file_ending}"
+    if not output_mask_path.is_file():
+        raise FileNotFoundError(
+            f"Expected breast mask output missing: {output_mask_path}"
+        )
+
+    return {
+        "mask_path": str(output_mask_path),
+        "predictions_path": str(predictions_path),
+        "concise_predictions": json.loads(concise_path.read_text(encoding="utf-8")),
+        "case_id": case_id,
+        "run_directory": str(run_root),
+    }
 
 
 def _run_prediction(

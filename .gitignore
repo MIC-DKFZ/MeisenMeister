@@ -8,3 +8,4 @@ __pycache__
 *.b2nd
 build
 meisenmeister.egg-info
+.codex
