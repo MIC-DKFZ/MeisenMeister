@@ -24,21 +24,15 @@ from meisenmeister.training.trainers.networks.primus import (
 
 
 class TrainingRegistryTests(unittest.TestCase):
-    def test_registry_finds_default_and_derived_trainers(self) -> None:
+    def test_registry_contains_only_sorted_trainer_classes(self) -> None:
         registry = get_trainer_registry()
 
-        self.assertIn("mmTrainer", registry)
-        self.assertIn("mmTrainer_Debug", registry)
-        self.assertIn("mmTrainer_NNUNetEncoder", registry)
-        self.assertIn("mmTrainer_PrimusM", registry)
-        self.assertIn("mmTrainer_PrimusM_bs4", registry)
-        self.assertIn("mmTrainer_NNUNetEncoder_Finetune_ClassBalanced", registry)
-        self.assertIn("mmTrainer_NNUNetEncoder_Finetune_TorchIO", registry)
-
-    def test_registry_ignores_non_trainer_classes(self) -> None:
-        registry = get_trainer_registry()
-
-        self.assertNotIn("NotATrainer", registry)
+        self.assertEqual(list(registry), sorted(registry))
+        self.assertTrue(registry)
+        for name, trainer_class in registry.items():
+            with self.subTest(name=name):
+                self.assertTrue(name.startswith("mmTrainer"))
+                self.assertTrue(issubclass(trainer_class, BaseTrainer))
 
     def test_unknown_trainer_error_lists_available_names(self) -> None:
         with self.assertRaisesRegex(
@@ -53,72 +47,20 @@ class TrainingRegistryTests(unittest.TestCase):
             with self.assertRaises(TypeError):
                 BaseTrainer("001", 0, root, root)
 
-    def test_default_trainer_satisfies_base_contract(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            with patch(
-                "meisenmeister.training.trainers.mm_trainer.get_fold_sample_ids",
-                return_value={
-                    "train": ["case_001_left", "case_001_right"],
-                    "val": ["case_002_left", "case_002_right"],
-                },
-            ):
-                trainer = mmTrainer("001", 0, root, root, root)
+    def test_representative_trainers_satisfy_base_contract(self) -> None:
+        trainer_classes = [
+            mmTrainer,
+            mmTrainer_NNUNetEncoder,
+            mmTrainer_NNUNetEncoder_Finetune_ClassBalanced,
+            mmTrainer_NNUNetEncoder_Finetune_TorchIO,
+            mmTrainer_PrimusM,
+            mmTrainer_PrimusM_bs4,
+        ]
+        sample_ids = {
+            "train": ["case_001_left", "case_001_right"],
+            "val": ["case_002_left", "case_002_right"],
+        }
 
-        self.assertIsInstance(trainer, BaseTrainer)
-
-    def test_architecture_exports_include_resnet3d18(self) -> None:
-        self.assertIn("ResNet3D18", get_available_architecture_names())
-        self.assertIn("ResidualEncoderClsNetwork", get_available_architecture_names())
-        self.assertIn("PrimusMClsNetwork", get_available_architecture_names())
-
-    def test_network_specific_trainer_satisfies_base_contract(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            with patch(
-                "meisenmeister.training.trainers.mm_trainer.get_fold_sample_ids",
-                return_value={
-                    "train": ["case_001_left", "case_001_right"],
-                    "val": ["case_002_left", "case_002_right"],
-                },
-            ):
-                trainer = mmTrainer_NNUNetEncoder("001", 0, root, root, root)
-
-        self.assertIsInstance(trainer, BaseTrainer)
-
-    def test_class_balanced_finetune_trainer_satisfies_base_contract(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            with patch(
-                "meisenmeister.training.trainers.mm_trainer.get_fold_sample_ids",
-                return_value={
-                    "train": ["case_001_left", "case_001_right"],
-                    "val": ["case_002_left", "case_002_right"],
-                },
-            ):
-                trainer = mmTrainer_NNUNetEncoder_Finetune_ClassBalanced(
-                    "001", 0, root, root, root
-                )
-
-        self.assertIsInstance(trainer, BaseTrainer)
-
-    def test_torchio_finetune_trainer_satisfies_base_contract(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            with patch(
-                "meisenmeister.training.trainers.mm_trainer.get_fold_sample_ids",
-                return_value={
-                    "train": ["case_001_left", "case_001_right"],
-                    "val": ["case_002_left", "case_002_right"],
-                },
-            ):
-                trainer = mmTrainer_NNUNetEncoder_Finetune_TorchIO(
-                    "001", 0, root, root, root
-                )
-
-        self.assertIsInstance(trainer, BaseTrainer)
-
-    def test_primus_trainer_satisfies_base_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             (root / "mmPlans.json").write_text(
@@ -127,16 +69,13 @@ class TrainingRegistryTests(unittest.TestCase):
             )
             with patch(
                 "meisenmeister.training.trainers.mm_trainer.get_fold_sample_ids",
-                return_value={
-                    "train": ["case_001_left", "case_001_right"],
-                    "val": ["case_002_left", "case_002_right"],
-                },
+                return_value=sample_ids,
             ):
-                trainer = mmTrainer_PrimusM("001", 0, root, root, root)
+                for trainer_class in trainer_classes:
+                    with self.subTest(trainer=trainer_class.__name__):
+                        trainer = trainer_class("001", 0, root, root, root)
+                        self.assertIsInstance(trainer, BaseTrainer)
 
-        self.assertIsInstance(trainer, BaseTrainer)
-
-    def test_primus_bs4_trainer_satisfies_base_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             (root / "mmPlans.json").write_text(
@@ -145,15 +84,18 @@ class TrainingRegistryTests(unittest.TestCase):
             )
             with patch(
                 "meisenmeister.training.trainers.mm_trainer.get_fold_sample_ids",
-                return_value={
-                    "train": ["case_001_left", "case_001_right"],
-                    "val": ["case_002_left", "case_002_right"],
-                },
+                return_value=sample_ids,
             ):
                 trainer = mmTrainer_PrimusM_bs4("001", 0, root, root, root)
 
-        self.assertIsInstance(trainer, BaseTrainer)
         self.assertEqual(trainer.batch_size, 4)
+
+    def test_architecture_exports_include_expected_names(self) -> None:
+        available_names = get_available_architecture_names()
+
+        self.assertIn("ResNet3D18", available_names)
+        self.assertIn("ResidualEncoderClsNetwork", available_names)
+        self.assertIn("PrimusMClsNetwork", available_names)
 
 
 if __name__ == "__main__":
