@@ -14,6 +14,15 @@ import torch
 from meisenmeister.utils.file_utils import discover_case_files
 
 predict_module = importlib.import_module("meisenmeister.training.predict")
+prediction_inference_module = importlib.import_module(
+    "meisenmeister.utils.prediction_inference"
+)
+prediction_pipeline_module = importlib.import_module(
+    "meisenmeister.training.prediction_pipeline"
+)
+prediction_utils_module = importlib.import_module(
+    "meisenmeister.utils.prediction_utils"
+)
 
 
 class _ConstantModel(torch.nn.Module):
@@ -48,7 +57,7 @@ class PredictEntrypointTests(unittest.TestCase):
             (input_dir / "case_001_0000.mha").touch()
             (input_dir / "case_001_0001.mha").touch()
 
-            file_ending = predict_module._resolve_prediction_file_ending(
+            file_ending = prediction_utils_module.resolve_prediction_file_ending(
                 input_dir,
                 {
                     "channel_names": {"0": "a", "1": "b"},
@@ -72,7 +81,7 @@ class PredictEntrypointTests(unittest.TestCase):
                 ValueError,
                 "Mixed prediction input suffixes detected",
             ):
-                predict_module._resolve_prediction_file_ending(
+                prediction_utils_module.resolve_prediction_file_ending(
                     input_dir,
                     {
                         "channel_names": {"0": "a", "1": "b"},
@@ -90,7 +99,7 @@ class PredictEntrypointTests(unittest.TestCase):
                 ValueError,
                 "Could not detect a supported prediction input suffix",
             ):
-                predict_module._resolve_prediction_file_ending(
+                prediction_utils_module.resolve_prediction_file_ending(
                     input_dir,
                     {
                         "channel_names": {"0": "a", "1": "b"},
@@ -116,11 +125,11 @@ class PredictEntrypointTests(unittest.TestCase):
             )
 
         with patch(
-            "meisenmeister.training.predict._prepare_case_prediction_inputs",
+            "meisenmeister.training.prediction_pipeline.prepare_case_prediction_inputs",
             side_effect=_fake_prepare_case_prediction_inputs,
         ):
             prepared = list(
-                predict_module._iter_prepared_case_prediction_inputs(
+                prediction_pipeline_module.iter_prepared_case_prediction_inputs(
                     case_files_by_case_id=case_files,
                     breast_mask_paths=breast_mask_paths,
                     dataset_json={"file_ending": ".nii.gz"},
@@ -181,7 +190,7 @@ class PredictEntrypointTests(unittest.TestCase):
                         "mask-2", encoding="utf-8"
                     )
 
-            mask_paths = predict_module._generate_breast_masks_for_cases(
+            mask_paths = prediction_pipeline_module.generate_breast_masks_for_cases(
                 case_files_by_case_id=case_files,
                 dataset_json={"file_ending": ".nii.gz"},
                 predictor=_Predictor(),
@@ -247,7 +256,7 @@ class PredictEntrypointTests(unittest.TestCase):
                         "new-mask", encoding="utf-8"
                     )
 
-            mask_paths = predict_module._generate_breast_masks_for_cases(
+            mask_paths = prediction_pipeline_module.generate_breast_masks_for_cases(
                 case_files_by_case_id=case_files,
                 dataset_json={"file_ending": ".nii.gz"},
                 predictor=_Predictor(),
@@ -311,7 +320,7 @@ class PredictEntrypointTests(unittest.TestCase):
                     image = sitk.GetImageFromArray(np.ones((2, 2, 2), dtype=np.uint8))
                     sitk.WriteImage(image, str(output_path / "case_001.nii.gz"))
 
-            mask_paths = predict_module._generate_breast_masks_for_cases(
+            mask_paths = prediction_pipeline_module.generate_breast_masks_for_cases(
                 case_files_by_case_id=case_files,
                 dataset_json={"file_ending": ".mha"},
                 predictor=_Predictor(),
@@ -353,7 +362,7 @@ class PredictEntrypointTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            written_path = predict_module._write_concise_prediction_output(
+            written_path = prediction_utils_module.write_concise_prediction_output(
                 predictions_path,
                 dataset_json={
                     "labels": {"0": "normal", "1": "benign", "2": "malignant"}
@@ -399,7 +408,7 @@ class PredictEntrypointTests(unittest.TestCase):
                 ValueError,
                 "Concise output requires predictions.json to contain exactly one case",
             ):
-                predict_module._write_concise_prediction_output(
+                prediction_utils_module.write_concise_prediction_output(
                     predictions_path,
                     dataset_json={
                         "labels": {"0": "normal", "1": "benign", "2": "malignant"}
@@ -407,11 +416,132 @@ class PredictEntrypointTests(unittest.TestCase):
                     concise_output_path=str(root / "concise.json"),
                 )
 
+    def test_predict_case_from_files_uses_input_suffix_instead_of_dataset_suffix(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            experiment_dir = root / "experiment"
+            experiment_dir.mkdir()
+            pre_path = root / "pre.mha"
+            post1_path = root / "post1.mha"
+            post2_path = root / "post2.mha"
+            for path in (pre_path, post1_path, post2_path):
+                path.write_text(path.name, encoding="utf-8")
+
+            def _fake_predict_from_modelfolder(model_folder, **kwargs):
+                del model_folder
+                staged_input_dir = Path(kwargs["input_dir"])
+                staged_names = sorted(path.name for path in staged_input_dir.iterdir())
+                self.assertEqual(
+                    staged_names,
+                    [
+                        "case_000_0000.mha",
+                        "case_000_0001.mha",
+                        "case_000_0002.mha",
+                    ],
+                )
+                output_dir = Path(kwargs["output_dir"])
+                mask_path = output_dir / "case_000_breast_mask.mha"
+                mask_path.write_text("mask", encoding="utf-8")
+                concise_path = Path(kwargs["concise_output_path"])
+                concise_path.write_text(
+                    json.dumps({"left": {"normal": 0.9}}),
+                    encoding="utf-8",
+                )
+                predictions_path = output_dir / "predictions.json"
+                predictions_path.write_text(json.dumps({"cases": {}}), encoding="utf-8")
+                return predictions_path
+
+            with (
+                patch(
+                    "meisenmeister.training.predict.load_dataset_json",
+                    return_value={
+                        "channel_names": {"0": "pre", "1": "post1", "2": "post2"},
+                        "file_ending": ".nii.gz",
+                    },
+                ),
+                patch(
+                    "meisenmeister.training.predict.predict_from_modelfolder",
+                    side_effect=_fake_predict_from_modelfolder,
+                ),
+            ):
+                result = predict_module.predict_case_from_files(
+                    str(experiment_dir),
+                    str(pre_path),
+                    str(post1_path),
+                    str(post2_path),
+                    folds=[0],
+                )
+
+        self.assertEqual(result["case_id"], "case_000")
+        self.assertEqual(Path(result["mask_path"]).suffix, ".mha")
+        self.assertEqual(result["concise_predictions"], {"left": {"normal": 0.9}})
+
+    def test_predict_case_from_files_rejects_missing_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            experiment_dir = root / "experiment"
+            experiment_dir.mkdir()
+            pre_path = root / "pre.nii.gz"
+            post1_path = root / "post1.nii.gz"
+            pre_path.write_text("pre", encoding="utf-8")
+            post1_path.write_text("post1", encoding="utf-8")
+
+            with patch(
+                "meisenmeister.training.predict.load_dataset_json",
+                return_value={
+                    "channel_names": {"0": "pre", "1": "post1", "2": "post2"},
+                    "file_ending": ".nii.gz",
+                },
+            ):
+                with self.assertRaisesRegex(
+                    FileNotFoundError,
+                    "Single-case prediction input files not found",
+                ):
+                    predict_module.predict_case_from_files(
+                        str(experiment_dir),
+                        str(pre_path),
+                        str(post1_path),
+                        str(root / "missing.nii.gz"),
+                        folds=[0],
+                    )
+
+    def test_predict_case_from_files_rejects_mixed_supported_suffixes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            experiment_dir = root / "experiment"
+            experiment_dir.mkdir()
+            pre_path = root / "pre.nii.gz"
+            post1_path = root / "post1.mha"
+            post2_path = root / "post2.nii.gz"
+            for path in (pre_path, post1_path, post2_path):
+                path.write_text(path.name, encoding="utf-8")
+
+            with patch(
+                "meisenmeister.training.predict.load_dataset_json",
+                return_value={
+                    "channel_names": {"0": "pre", "1": "post1", "2": "post2"},
+                    "file_ending": ".nii.gz",
+                },
+            ):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "Mixed prediction input suffixes detected for single-case prediction",
+                ):
+                    predict_module.predict_case_from_files(
+                        str(experiment_dir),
+                        str(pre_path),
+                        str(post1_path),
+                        str(post2_path),
+                        folds=[0],
+                    )
+
     def test_predict_roi_with_tta_averages_all_flip_variants(self) -> None:
         model = _ConstantModel([1.0, 3.0])
         roi_tensor = torch.arange(16, dtype=torch.float32).reshape(1, 2, 2, 4)
 
-        probabilities = predict_module._predict_roi_with_tta(
+        probabilities = prediction_utils_module.predict_roi_with_tta(
             model,
             roi_tensor,
             device=torch.device("cpu"),
@@ -420,7 +550,7 @@ class PredictEntrypointTests(unittest.TestCase):
 
         expected = torch.softmax(torch.tensor([1.0, 3.0]), dim=0).numpy()
         np.testing.assert_allclose(probabilities, expected)
-        self.assertEqual(len(predict_module._get_flip_axes(True)), 8)
+        self.assertEqual(len(prediction_utils_module.get_flip_axes(True)), 8)
 
     def test_discover_case_files_groups_multiple_cases(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -528,7 +658,7 @@ class PredictEntrypointTests(unittest.TestCase):
 
             with (
                 patch(
-                    "meisenmeister.training.predict._resolve_trainer_architecture_name",
+                    "meisenmeister.training.predict.resolve_trainer_architecture_name",
                     return_value="ResNet3D18",
                 ),
                 patch(
@@ -562,22 +692,22 @@ class PredictEntrypointTests(unittest.TestCase):
                     },
                 ),
                 patch(
-                    "meisenmeister.training.predict.discover_case_files",
+                    "meisenmeister.training.prediction_pipeline.discover_case_files",
                     return_value=case_files,
                 ),
                 patch(
-                    "meisenmeister.training.predict.get_breast_segmentation_predictor",
+                    "meisenmeister.training.prediction_pipeline.get_breast_segmentation_predictor",
                     return_value=object(),
                 ),
                 patch(
-                    "meisenmeister.training.predict._generate_breast_masks_for_cases",
+                    "meisenmeister.training.prediction_pipeline.generate_breast_masks_for_cases",
                     return_value={
                         "case_001": output_dir / "case_001_breast_mask.nii.gz",
                         "case_002": output_dir / "case_002_breast_mask.nii.gz",
                     },
                 ),
                 patch(
-                    "meisenmeister.training.predict._load_fold_predictors",
+                    "meisenmeister.training.predict.load_fold_predictors",
                     return_value=[
                         {
                             "fold": 0,
@@ -594,11 +724,11 @@ class PredictEntrypointTests(unittest.TestCase):
                     ],
                 ),
                 patch(
-                    "meisenmeister.training.predict._prepare_case_prediction_inputs",
+                    "meisenmeister.training.prediction_pipeline.prepare_case_prediction_inputs",
                     side_effect=_fake_prepare_case_prediction_inputs,
                 ),
                 patch(
-                    "meisenmeister.training.predict._predict_roi_with_tta",
+                    "meisenmeister.training.prediction_pipeline.predict_roi_with_tta",
                     side_effect=[
                         np.array([0.2, 0.8], dtype=np.float32),
                         np.array([0.4, 0.6], dtype=np.float32),
@@ -685,7 +815,7 @@ class PredictEntrypointTests(unittest.TestCase):
 
             with (
                 patch(
-                    "meisenmeister.training.predict._resolve_trainer_architecture_name",
+                    "meisenmeister.training.predict.resolve_trainer_architecture_name",
                     return_value="ResNet3D18",
                 ),
                 patch(
@@ -719,22 +849,22 @@ class PredictEntrypointTests(unittest.TestCase):
                     },
                 ),
                 patch(
-                    "meisenmeister.training.predict.discover_case_files",
+                    "meisenmeister.training.prediction_pipeline.discover_case_files",
                     return_value=case_files,
                 ) as mock_discover_case_files,
                 patch(
-                    "meisenmeister.training.predict.get_breast_segmentation_predictor",
+                    "meisenmeister.training.prediction_pipeline.get_breast_segmentation_predictor",
                     return_value=object(),
                 ),
                 patch(
-                    "meisenmeister.training.predict._generate_breast_masks_for_cases",
+                    "meisenmeister.training.prediction_pipeline.generate_breast_masks_for_cases",
                     return_value={
                         "case_001": output_dir / "case_001_breast_mask.mha",
                         "case_002": output_dir / "case_002_breast_mask.mha",
                     },
                 ),
                 patch(
-                    "meisenmeister.training.predict._load_fold_predictors",
+                    "meisenmeister.training.predict.load_fold_predictors",
                     return_value=[
                         {
                             "fold": 0,
@@ -745,11 +875,11 @@ class PredictEntrypointTests(unittest.TestCase):
                     ],
                 ),
                 patch(
-                    "meisenmeister.training.predict._prepare_case_prediction_inputs",
+                    "meisenmeister.training.prediction_pipeline.prepare_case_prediction_inputs",
                     side_effect=_fake_prepare_case_prediction_inputs,
                 ),
                 patch(
-                    "meisenmeister.training.predict._predict_roi_with_tta",
+                    "meisenmeister.training.prediction_pipeline.predict_roi_with_tta",
                     side_effect=[
                         np.array([0.2, 0.8], dtype=np.float32),
                         np.array([0.7, 0.3], dtype=np.float32),
@@ -807,7 +937,7 @@ class PredictEntrypointTests(unittest.TestCase):
 
             with (
                 patch(
-                    "meisenmeister.training.predict._resolve_trainer_architecture_name",
+                    "meisenmeister.training.predict.resolve_trainer_architecture_name",
                     return_value="ResNet3D18",
                 ),
                 patch(
@@ -834,11 +964,11 @@ class PredictEntrypointTests(unittest.TestCase):
                     return_value={"roi_labels": {"left": 1}},
                 ),
                 patch(
-                    "meisenmeister.training.predict._load_fold_predictors",
+                    "meisenmeister.training.predict.load_fold_predictors",
                     return_value=[],
                 ) as mock_load_fold_predictors,
                 patch(
-                    "meisenmeister.training.predict._run_prediction",
+                    "meisenmeister.training.predict.run_prediction",
                     return_value=Path("/tmp/predictions.json"),
                 ) as mock_run_prediction,
             ):
@@ -914,21 +1044,21 @@ class PredictEntrypointTests(unittest.TestCase):
 
             with (
                 patch(
-                    "meisenmeister.training.predict.discover_case_files",
+                    "meisenmeister.training.prediction_pipeline.discover_case_files",
                     return_value=case_files,
                 ),
                 patch(
-                    "meisenmeister.training.predict.get_breast_segmentation_predictor",
+                    "meisenmeister.training.prediction_pipeline.get_breast_segmentation_predictor",
                     return_value=object(),
                 ),
                 patch(
-                    "meisenmeister.training.predict._generate_breast_masks_for_cases",
+                    "meisenmeister.training.prediction_pipeline.generate_breast_masks_for_cases",
                     return_value={
                         "case_001": output_dir / "case_001_breast_mask.nii.gz",
                     },
                 ),
                 patch(
-                    "meisenmeister.training.predict._get_experiment_metadata",
+                    "meisenmeister.training.predict.get_experiment_metadata",
                     return_value={
                         "dataset_id": "001",
                         "dataset_name": "Dataset_001_Test",
@@ -938,7 +1068,7 @@ class PredictEntrypointTests(unittest.TestCase):
                     },
                 ),
                 patch(
-                    "meisenmeister.training.predict._load_fold_predictors_from_experiment_dir",
+                    "meisenmeister.training.predict.load_fold_predictors_from_experiment_dir",
                     return_value=[
                         {
                             "fold": 0,
@@ -951,11 +1081,11 @@ class PredictEntrypointTests(unittest.TestCase):
                     ],
                 ),
                 patch(
-                    "meisenmeister.training.predict._prepare_case_prediction_inputs",
+                    "meisenmeister.training.prediction_pipeline.prepare_case_prediction_inputs",
                     side_effect=_fake_prepare_case_prediction_inputs,
                 ),
                 patch(
-                    "meisenmeister.training.predict._predict_roi_with_tta",
+                    "meisenmeister.training.prediction_pipeline.predict_roi_with_tta",
                     side_effect=[
                         np.array([0.2, 0.8], dtype=np.float32),
                         np.array([0.7, 0.3], dtype=np.float32),
@@ -1046,21 +1176,21 @@ class PredictEntrypointTests(unittest.TestCase):
 
             with (
                 patch(
-                    "meisenmeister.training.predict.discover_case_files",
+                    "meisenmeister.training.prediction_pipeline.discover_case_files",
                     return_value=case_files,
                 ),
                 patch(
-                    "meisenmeister.training.predict.get_breast_segmentation_predictor",
+                    "meisenmeister.training.prediction_pipeline.get_breast_segmentation_predictor",
                     return_value=object(),
                 ),
                 patch(
-                    "meisenmeister.training.predict._generate_breast_masks_for_cases",
+                    "meisenmeister.training.prediction_pipeline.generate_breast_masks_for_cases",
                     return_value={
                         "case_001": output_dir / "case_001_breast_mask.nii.gz",
                     },
                 ),
                 patch(
-                    "meisenmeister.training.predict._get_experiment_metadata",
+                    "meisenmeister.training.predict.get_experiment_metadata",
                     return_value={
                         "dataset_id": "001",
                         "dataset_name": "Dataset_001_Test",
@@ -1070,7 +1200,7 @@ class PredictEntrypointTests(unittest.TestCase):
                     },
                 ),
                 patch(
-                    "meisenmeister.training.predict._load_fold_predictors_from_experiment_dir",
+                    "meisenmeister.training.predict.load_fold_predictors_from_experiment_dir",
                     return_value=[
                         {
                             "fold": 0,
@@ -1083,11 +1213,11 @@ class PredictEntrypointTests(unittest.TestCase):
                     ],
                 ),
                 patch(
-                    "meisenmeister.training.predict._prepare_case_prediction_inputs",
+                    "meisenmeister.training.prediction_pipeline.prepare_case_prediction_inputs",
                     side_effect=_fake_prepare_case_prediction_inputs,
                 ),
                 patch(
-                    "meisenmeister.training.predict._predict_roi_with_tta",
+                    "meisenmeister.training.prediction_pipeline.predict_roi_with_tta",
                     side_effect=[
                         np.array([0.987, 0.02, 0.001], dtype=np.float32),
                         np.array([0.001, 0.01, 0.988], dtype=np.float32),
@@ -1137,7 +1267,7 @@ class PredictEntrypointTests(unittest.TestCase):
                 fold_dir / "model_best.pt",
             )
 
-            metadata = predict_module._get_experiment_metadata(
+            metadata = prediction_pipeline_module.get_experiment_metadata(
                 experiment_dir,
                 [0],
                 "best",
@@ -1166,11 +1296,11 @@ class PredictEntrypointTests(unittest.TestCase):
 
         with (
             patch(
-                "meisenmeister.training.predict.get_architecture_class",
+                "meisenmeister.utils.prediction_inference.get_architecture_class",
                 return_value=_PortableModel,
             ),
             patch(
-                "meisenmeister.training.predict.maybe_compile_model",
+                "meisenmeister.utils.prediction_inference.maybe_compile_model",
                 side_effect=lambda model, device, enabled: (
                     model,
                     False,
@@ -1179,7 +1309,7 @@ class PredictEntrypointTests(unittest.TestCase):
             ),
         ):
             model, compile_applied, compile_status = (
-                predict_module._load_model_from_checkpoint_payload(
+                prediction_inference_module.load_model_from_checkpoint_payload(
                     checkpoint_payload=checkpoint_payload,
                     architecture_name="PrimusMClsNetwork",
                     device=torch.device("cpu"),
@@ -1200,11 +1330,14 @@ class PredictEntrypointTests(unittest.TestCase):
         )
 
     def test_predict_uses_single_identity_variant_when_tta_disabled(self) -> None:
-        with patch("meisenmeister.training.predict._get_flip_axes", return_value=[()]):
+        with patch(
+            "meisenmeister.utils.prediction_utils.get_flip_axes",
+            return_value=[()],
+        ):
             model = _ConstantModel([2.0, 1.0])
             roi_tensor = torch.ones((1, 2, 2, 2), dtype=torch.float32)
 
-            probabilities = predict_module._predict_roi_with_tta(
+            probabilities = prediction_utils_module.predict_roi_with_tta(
                 model,
                 roi_tensor,
                 device=torch.device("cpu"),

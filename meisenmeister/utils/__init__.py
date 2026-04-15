@@ -15,6 +15,20 @@ from .path_utils import (
     require_global_paths_set,
     verify_required_global_paths_set,
 )
+from .prediction_utils import (
+    SUPPORTED_PREDICTION_FILE_ENDINGS,
+    average_probabilities,
+    build_concise_prediction_payload,
+    build_prediction_dataset_json,
+    build_prediction_payload,
+    get_flip_axes,
+    predict_roi_with_tta,
+    resolve_prediction_file_ending,
+    resolve_prediction_file_ending_from_paths,
+    save_binary_mask,
+    stage_prediction_case_file,
+    write_concise_prediction_output,
+)
 from .training import (
     aggregate_epoch_metrics,
     aggregate_validation_classification_metrics,
@@ -98,4 +112,16 @@ __all__ = [
     "unwrap_model",
     "validate_resume_state",
     "verify_required_global_paths_set",
+    "SUPPORTED_PREDICTION_FILE_ENDINGS",
+    "average_probabilities",
+    "build_concise_prediction_payload",
+    "build_prediction_dataset_json",
+    "build_prediction_payload",
+    "get_flip_axes",
+    "predict_roi_with_tta",
+    "resolve_prediction_file_ending",
+    "resolve_prediction_file_ending_from_paths",
+    "save_binary_mask",
+    "stage_prediction_case_file",
+    "write_concise_prediction_output",
 ]
