@@ -123,3 +123,16 @@ Paper: https://arxiv.org/pdf/2510.27326
   year={2025}
 }
 ```
+
+This model also relies on the BreastDivider dataset and segmentation work:
+
+Dataset: https://huggingface.co/datasets/Bubenpo/BreastDividerDataset
+
+```bibtex
+@article{rokuss2025breastdivider,
+  title     = {Divide and Conquer: A Large-Scale Dataset and Model for Left-Right Breast MRI Segmentation},
+  author    = {Rokuss, Maximilian and Hamm, Benjamin and Kirchhoff, Yannick and Maier-Hein, Klaus},
+  journal   = {arXiv preprint arXiv:2507.13830},
+  year      = {2025}
+}
+```
